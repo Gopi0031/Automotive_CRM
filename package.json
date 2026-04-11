@@ -4,9 +4,10 @@
     "description": "Modern Automotive Billing System / Garage CRM",
     "scripts": {
         "dev": "next dev",
-        "build": "next build",
+        "build": "prisma generate && next build",
         "start": "next start",
         "lint": "next lint",
+        "postinstall": "prisma generate",
         "prisma:migrate": "prisma migrate dev",
         "prisma:generate": "prisma generate",
         "seed": "node prisma/seed.js"
@@ -38,5 +39,8 @@
     },
     "prisma": {
         "seed": "node prisma/seed.js"
+    },
+    "engines": {
+        "node": "18.x"
     }
 }
