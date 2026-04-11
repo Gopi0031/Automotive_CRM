@@ -1,0 +1,524 @@
+// prisma/schema.prisma
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mongodb"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  email     String   @unique
+  password  String
+  name      String
+  phone     String?
+  role      UserRole @default(EMPLOYEE)
+  branchId  String?  @db.ObjectId
+  branch    Branch?  @relation("BranchStaff", fields: [branchId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  avatar    String?
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  jobs              Job[]
+  payments          Payment[]
+  activities        ActivityLog[]
+  managedBranches   Branch[]        @relation("BranchManager")
+  createdCustomers  Customer[]      @relation("CustomerCreator")
+  
+  // Inventory Request relations
+  inventoryRequests       InventoryRequest[] @relation("RequestedBy")
+  approvedRequests        InventoryRequest[] @relation("ApprovedBy")
+  
+  // Transfer relations
+  transfersRequested      InventoryTransfer[] @relation("TransferRequestedBy")
+  transfersApproved       InventoryTransfer[] @relation("TransferApprovedBy")
+  transfersReceived       InventoryTransfer[] @relation("TransferReceivedBy")
+  
+  // Notifications
+  notifications           Notification[]
+
+  @@index([branchId])
+  @@index([role])
+}
+
+enum UserRole {
+  SUPER_ADMIN
+  MANAGER
+  EMPLOYEE
+  CASHIER
+}
+
+model Branch {
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  name      String
+  location  String
+  phone     String
+  email     String
+  managerId String?  @db.ObjectId
+  manager   User?    @relation("BranchManager", fields: [managerId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  staff             User[]     @relation("BranchStaff")
+  customers         Customer[]
+  jobs              Job[]
+  invoices          Invoice[]
+  parts             Part[]
+  inventoryRequests InventoryRequest[]
+  transfersFrom     InventoryTransfer[] @relation("TransferFrom")
+  transfersTo       InventoryTransfer[] @relation("TransferTo")
+
+  @@index([managerId])
+}
+
+model Customer {
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  name      String
+  email     String?
+  phone     String
+  address   String?
+  city      String?
+  state     String?
+  pincode   String?
+  branchId  String?  @db.ObjectId
+  branch    Branch?  @relation(fields: [branchId], references: [id])
+  createdBy String?  @db.ObjectId
+  createdByUser User? @relation("CustomerCreator", fields: [createdBy], references: [id])
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  vehicles Vehicle[]
+  invoices Invoice[]
+
+  @@index([phone])
+  @@index([email])
+  @@index([branchId])
+}
+
+model Vehicle {
+  id                  String       @id @default(auto()) @map("_id") @db.ObjectId
+  make                String
+  model               String
+  year                Int
+  variant             String?
+  color               String?
+  licensePlate        String       @unique
+  presentOdometer     Int?
+  lastServiceOdometer Int?
+  nextServiceOdometer Int?
+  lastServiceDate     DateTime?
+  nextServiceDue      DateTime?
+  fuelType            FuelType     @default(PETROL)
+  transmissionType    TransmissionType @default(MANUAL)
+  engineCapacity      Int?
+  registrationDate    DateTime?
+  insuranceExpiry     DateTime?
+  insuranceCompany    String?
+  insurancePolicyNo   String?
+  pucExpiry           DateTime?
+  vehicleCondition    VehicleCondition @default(GOOD)
+  knownIssues         String?
+  specialInstructions String?
+  customerNotes       String?
+  internalNotes       String?
+  customerId          String       @db.ObjectId
+  customer            Customer     @relation(fields: [customerId], references: [id])
+  images              String[]
+  createdAt           DateTime     @default(now())
+  updatedAt           DateTime     @updatedAt
+
+  jobs Job[]
+
+  @@index([customerId])
+}
+
+enum FuelType {
+  PETROL
+  DIESEL
+  CNG
+  LPG
+  ELECTRIC
+  HYBRID
+  PETROL_CNG
+  PETROL_LPG
+}
+
+enum TransmissionType {
+  MANUAL
+  AUTOMATIC
+  CVT
+  DCT
+  AMT
+  SEMI_AUTOMATIC
+}
+
+enum VehicleCondition {
+  EXCELLENT
+  GOOD
+  FAIR
+  POOR
+  NEEDS_ATTENTION
+}
+
+model Job {
+  id               String        @id @default(auto()) @map("_id") @db.ObjectId
+  jobNumber        String        @unique
+  vehicleId        String        @db.ObjectId
+  vehicle          Vehicle       @relation(fields: [vehicleId], references: [id])
+  branchId         String        @db.ObjectId
+  branch           Branch        @relation(fields: [branchId], references: [id])
+  assignedToId     String?       @db.ObjectId
+  assignedTo       User?         @relation(fields: [assignedToId], references: [id])
+  status           JobStatus     @default(PENDING)
+  priority         Priority      @default(MEDIUM)
+  description      String
+  estimatedCost    Float?
+  actualCost       Float?
+  laborHours       Float?
+  scheduledDate    DateTime?
+  completedDate    DateTime?
+  beforeImages     String[]
+  afterImages      String[]
+  customerNotes    String?
+  technicianNotes  String?
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+
+  services          JobService[]
+  parts             JobPart[]
+  invoice           Invoice?
+  timeline          JobTimeline[]
+  inventoryRequests InventoryRequest[]
+
+  @@index([vehicleId])
+  @@index([branchId])
+  @@index([assignedToId])
+  @@index([status])
+}
+
+enum JobStatus {
+  PENDING
+  IN_PROGRESS
+  AWAITING_PARTS
+  COMPLETED
+  DELIVERED
+  CANCELLED
+}
+
+enum Priority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+model Service {
+  id          String   @id @default(auto()) @map("_id") @db.ObjectId
+  name        String
+  description String?
+  category    String
+  basePrice   Float
+  duration    Int
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  jobs JobService[]
+
+  @@index([category])
+}
+
+model JobService {
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  jobId     String   @db.ObjectId
+  job       Job      @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  serviceId String   @db.ObjectId
+  service   Service  @relation(fields: [serviceId], references: [id])
+  quantity  Int      @default(1)
+  price     Float
+  discount  Float    @default(0)
+  notes     String?
+  createdAt DateTime @default(now())
+
+  @@index([jobId])
+  @@index([serviceId])
+}
+
+model Part {
+  id             String   @id @default(auto()) @map("_id") @db.ObjectId
+  partNumber     String   @unique
+  name           String
+  description    String?
+  category       String
+  brand          String?
+  costPrice      Float
+  sellingPrice   Float
+  quantity       Int
+  minStockLevel  Int      @default(5)
+  location       String?
+  supplier       String?
+  branchId       String   @db.ObjectId
+  branch         Branch   @relation(fields: [branchId], references: [id])
+  images         String[]
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  jobs                  JobPart[]
+  inventoryRequestItems InventoryRequestItem[]
+  transferItems         InventoryTransferItem[]
+
+  @@index([category])
+  @@index([branchId])
+}
+
+model JobPart {
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  jobId     String   @db.ObjectId
+  job       Job      @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  partId    String   @db.ObjectId
+  part      Part     @relation(fields: [partId], references: [id])
+  quantity  Int
+  price     Float
+  discount  Float    @default(0)
+  notes     String?
+  createdAt DateTime @default(now())
+
+  @@index([jobId])
+  @@index([partId])
+}
+
+model Invoice {
+  id              String        @id @default(auto()) @map("_id") @db.ObjectId
+  invoiceNumber   String
+  jobId           String        @unique @db.ObjectId
+  job             Job           @relation(fields: [jobId], references: [id])
+  customerId      String        @db.ObjectId
+  customer        Customer      @relation(fields: [customerId], references: [id])
+  branchId        String        @db.ObjectId
+  branch          Branch        @relation(fields: [branchId], references: [id])
+  subtotal        Float
+  tax             Float
+  discount        Float         @default(0)
+  total           Float
+  amountPaid      Float         @default(0)
+  status          InvoiceStatus @default(PENDING)
+  dueDate         DateTime?
+  notes           String?
+  termsConditions String?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  payments Payment[]
+
+  @@unique([invoiceNumber, branchId])
+  @@index([customerId])
+  @@index([branchId])
+  @@index([status])
+}
+
+enum InvoiceStatus {
+  PENDING
+  PARTIALLY_PAID
+  PAID
+  OVERDUE
+  CANCELLED
+}
+
+model Payment {
+  id            String        @id @default(auto()) @map("_id") @db.ObjectId
+  invoiceId     String        @db.ObjectId
+  invoice       Invoice       @relation(fields: [invoiceId], references: [id])
+  amount        Float
+  method        PaymentMethod
+  reference     String?
+  receivedById  String        @db.ObjectId
+  receivedBy    User          @relation(fields: [receivedById], references: [id])
+  notes         String?
+  createdAt     DateTime      @default(now())
+
+  @@index([invoiceId])
+  @@index([receivedById])
+}
+
+enum PaymentMethod {
+  CASH
+  CARD
+  BANK_TRANSFER
+  CHECK
+  MOBILE_MONEY
+}
+
+model JobTimeline {
+  id          String   @id @default(auto()) @map("_id") @db.ObjectId
+  jobId       String   @db.ObjectId
+  job         Job      @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  status      String
+  description String
+  createdAt   DateTime @default(now())
+
+  @@index([jobId])
+}
+
+model ActivityLog {
+  id          String   @id @default(auto()) @map("_id") @db.ObjectId
+  userId      String   @db.ObjectId
+  user        User     @relation(fields: [userId], references: [id])
+  action      String
+  entity      String
+  entityId    String?
+  description String
+  metadata    Json?
+  createdAt   DateTime @default(now())
+
+  @@index([userId])
+  @@index([entity])
+  @@index([createdAt])
+}
+
+// ==================== NEW MODELS ====================
+
+// Inventory Request - For technicians requesting parts for jobs
+model InventoryRequest {
+  id              String              @id @default(auto()) @map("_id") @db.ObjectId
+  requestNumber   String              @unique
+  jobId           String              @db.ObjectId
+  job             Job                 @relation(fields: [jobId], references: [id])
+  requestedById   String              @db.ObjectId
+  requestedBy     User                @relation("RequestedBy", fields: [requestedById], references: [id])
+  branchId        String              @db.ObjectId
+  branch          Branch              @relation(fields: [branchId], references: [id])
+  status          RequestStatus       @default(PENDING)
+  approvedById    String?             @db.ObjectId
+  approvedBy      User?               @relation("ApprovedBy", fields: [approvedById], references: [id])
+  approvedAt      DateTime?
+  rejectionReason String?
+  notes           String?
+  urgency         Priority            @default(MEDIUM)
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @updatedAt
+
+  items           InventoryRequestItem[]
+
+  @@index([jobId])
+  @@index([requestedById])
+  @@index([branchId])
+  @@index([status])
+}
+
+model InventoryRequestItem {
+  id                String            @id @default(auto()) @map("_id") @db.ObjectId
+  requestId         String            @db.ObjectId
+  request           InventoryRequest  @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  partId            String            @db.ObjectId
+  part              Part              @relation(fields: [partId], references: [id])
+  quantityRequested Int
+  quantityApproved  Int?
+  notes             String?
+  createdAt         DateTime          @default(now())
+
+  @@index([requestId])
+  @@index([partId])
+}
+
+enum RequestStatus {
+  PENDING
+  APPROVED
+  PARTIALLY_APPROVED
+  REJECTED
+  CANCELLED
+}
+
+// Inter-branch Transfer
+model InventoryTransfer {
+  id                String            @id @default(auto()) @map("_id") @db.ObjectId
+  transferNumber    String            @unique
+  fromBranchId      String            @db.ObjectId
+  fromBranch        Branch            @relation("TransferFrom", fields: [fromBranchId], references: [id])
+  toBranchId        String            @db.ObjectId
+  toBranch          Branch            @relation("TransferTo", fields: [toBranchId], references: [id])
+  requestedById     String            @db.ObjectId
+  requestedBy       User              @relation("TransferRequestedBy", fields: [requestedById], references: [id])
+  status            TransferStatus    @default(REQUESTED)
+  approvedById      String?           @db.ObjectId
+  approvedBy        User?             @relation("TransferApprovedBy", fields: [approvedById], references: [id])
+  approvedAt        DateTime?
+  sentAt            DateTime?
+  receivedAt        DateTime?
+  receivedById      String?           @db.ObjectId
+  receivedBy        User?             @relation("TransferReceivedBy", fields: [receivedById], references: [id])
+  rejectionReason   String?
+  notes             String?
+  urgency           Priority          @default(MEDIUM)
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+
+  items             InventoryTransferItem[]
+
+  @@index([fromBranchId])
+  @@index([toBranchId])
+  @@index([requestedById])
+  @@index([status])
+}
+
+model InventoryTransferItem {
+  id                String              @id @default(auto()) @map("_id") @db.ObjectId
+  transferId        String              @db.ObjectId
+  transfer          InventoryTransfer   @relation(fields: [transferId], references: [id], onDelete: Cascade)
+  partId            String              @db.ObjectId
+  part              Part                @relation(fields: [partId], references: [id])
+  quantityRequested Int
+  quantitySent      Int?
+  quantityReceived  Int?
+  notes             String?
+  createdAt         DateTime            @default(now())
+
+  @@index([transferId])
+  @@index([partId])
+}
+
+enum TransferStatus {
+  REQUESTED
+  APPROVED
+  REJECTED
+  IN_TRANSIT
+  RECEIVED
+  CANCELLED
+}
+
+// Notification model
+model Notification {
+  id          String            @id @default(auto()) @map("_id") @db.ObjectId
+  userId      String            @db.ObjectId
+  user        User              @relation(fields: [userId], references: [id])
+  type        NotificationType
+  title       String
+  message     String
+  entityType  String?
+  entityId    String?
+  isRead      Boolean           @default(false)
+  createdAt   DateTime          @default(now())
+
+  @@index([userId])
+  @@index([isRead])
+  @@index([createdAt])
+}
+
+enum NotificationType {
+  INVENTORY_REQUEST
+  INVENTORY_APPROVED
+  INVENTORY_REJECTED
+  TRANSFER_REQUEST
+  TRANSFER_APPROVED
+  TRANSFER_REJECTED
+  TRANSFER_SENT
+  TRANSFER_RECEIVED
+  JOB_ASSIGNED
+  JOB_UPDATED
+  LOW_STOCK
+  GENERAL
+}

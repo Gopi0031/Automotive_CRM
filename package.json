@@ -1,0 +1,42 @@
+{
+    "name": "automotive-billing-system",
+    "version": "1.0.0",
+    "description": "Modern Automotive Billing System / Garage CRM",
+    "scripts": {
+        "dev": "next dev",
+        "build": "next build",
+        "start": "next start",
+        "lint": "next lint",
+        "prisma:migrate": "prisma migrate dev",
+        "prisma:generate": "prisma generate",
+        "seed": "node prisma/seed.js"
+    },
+    "dependencies": {
+        "@prisma/client": "^5.8.0",
+        "axios": "^1.6.2",
+        "bcryptjs": "^2.4.3",
+        "cloudinary": "^1.41.3",
+        "clsx": "^2.1.1",
+        "jsonwebtoken": "^9.0.3",
+        "next": "^16.2.2",
+        "next-cloudinary": "^5.8.0",
+        "react": "^18.3.1",
+        "react-dom": "^18.3.1",
+        "react-hot-toast": "^2.4.1",
+        "tailwind-merge": "^3.5.0",
+        "xlsx": "^0.18.5"
+    },
+    "devDependencies": {
+        "@types/bcryptjs": "^2.4.6",
+        "@types/jsonwebtoken": "^9.0.10",
+        "autoprefixer": "^10.4.17",
+        "eslint": "^8.55.0",
+        "eslint-config-next": "^15.0.0",
+        "postcss": "^8.4.32",
+        "prisma": "^5.8.0",
+        "tailwindcss": "^3.4.1"
+    },
+    "prisma": {
+        "seed": "node prisma/seed.js"
+    }
+}
