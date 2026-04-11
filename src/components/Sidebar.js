@@ -1,720 +1,725 @@
 // src/components/Sidebar.js
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import Link from 'next/link';
 
+// ─── Keyframes injected once ───────────────────────────────
+const SIDEBAR_CSS = `
+  @keyframes sb-fade-in   { from{opacity:0;transform:translateX(-8px)} to{opacity:1;transform:translateX(0)} }
+  @keyframes sb-slide-up  { from{opacity:0;transform:translateY(10px)} to{opacity:1;transform:translateY(0)} }
+  @keyframes sb-tooltip   { from{opacity:0;transform:translateY(-50%) translateX(-6px)} to{opacity:1;transform:translateY(-50%) translateX(0)} }
+  @keyframes sb-overlay   { from{opacity:0} to{opacity:1} }
+  @keyframes sb-badge-pop { 0%{transform:scale(0)} 60%{transform:scale(1.25)} 100%{transform:scale(1)} }
+  @keyframes sb-glow-pulse{ 0%,100%{opacity:.06} 50%{opacity:.14} }
+  @keyframes sb-online-ping{ 0%,100%{transform:scale(1);opacity:.6} 50%{transform:scale(1.8);opacity:0} }
+
+  .sb-overlay   { animation: sb-overlay .28s ease; }
+  .sb-badge     { animation: sb-badge-pop .3s cubic-bezier(.4,0,.2,1); }
+
+  .sb-collapse-btn:hover  { background:rgba(255,255,255,.09)!important; border-color:rgba(255,255,255,.18)!important; }
+  .sb-logout-btn:hover    { background:rgba(239,68,68,.12)!important; color:#f87171!important; }
+  .sb-logo-icon           { transition:transform .35s ease; }
+  .sb-logo-icon:hover     { transform:rotate(-6deg) scale(1.08); }
+  .sb-avatar:hover        { transform:scale(1.06); }
+
+  /* nav link base */
+  .sb-link { transition:all .22s cubic-bezier(.4,0,.2,1); }
+  .sb-link:hover { background:rgba(255,255,255,.055)!important; }
+
+  /* scrollbar */
+  .sb-nav::-webkit-scrollbar        { width:3px; }
+  .sb-nav::-webkit-scrollbar-track  { background:transparent; }
+  .sb-nav::-webkit-scrollbar-thumb  { background:rgba(255,255,255,.07); border-radius:2px; }
+  .sb-nav::-webkit-scrollbar-thumb:hover { background:rgba(255,255,255,.15); }
+
+  @media(max-width:640px){ .sb-link:hover{ background:transparent!important; } }
+`;
+
+function SidebarCSS() {
+  return <style dangerouslySetInnerHTML={{ __html: SIDEBAR_CSS }} />;
+}
+
+// ─── role configs ──────────────────────────────────────────
+const ROLES = {
+  SUPER_ADMIN : { label:'Super Admin', icon:'👑', g:'linear-gradient(135deg,#7c3aed,#5b21b6)', c:'#a78bfa', dim:'rgba(167,139,250,.15)', glow:'rgba(124,58,237,.45)' },
+  MANAGER     : { label:'Manager',     icon:'👔', g:'linear-gradient(135deg,#3b82f6,#1d4ed8)', c:'#93c5fd', dim:'rgba(147,197,253,.15)', glow:'rgba(59,130,246,.45)'  },
+  EMPLOYEE    : { label:'Technician',  icon:'🔧', g:'linear-gradient(135deg,#10b981,#059669)', c:'#6ee7b7', dim:'rgba(110,231,183,.15)', glow:'rgba(16,185,129,.45)'  },
+  CASHIER     : { label:'Cashier',     icon:'💰', g:'linear-gradient(135deg,#f59e0b,#d97706)', c:'#fcd34d', dim:'rgba(252,211,77,.15)',  glow:'rgba(245,158,11,.45)'  },
+};
+
+const CAT_META = {
+  main       : { label:null },
+  management : { label:'Management' },
+  crm        : { label:'Customers'  },
+  operations : { label:'Operations' },
+  inventory  : { label:'Inventory'  },
+  billing    : { label:'Billing'    },
+  analytics  : { label:'Analytics'  },
+};
+
+const NAV_ITEMS = {
+  SUPER_ADMIN:[
+    {name:'Dashboard',     href:'/dashboard',          icon:'🏠',cat:'main'},
+    {name:'Users',         href:'/users',              icon:'👥',cat:'management'},
+    {name:'Branches',      href:'/branches',           icon:'🏢',cat:'management'},
+    {name:'Customers',     href:'/customers',          icon:'🧑‍🤝‍🧑',cat:'crm'},
+    {name:'Vehicles',      href:'/vehicles',           icon:'🚗',cat:'crm'},
+    {name:'Jobs',          href:'/jobs',               icon:'🔧',cat:'operations'},
+    {name:'Inventory',     href:'/inventory',          icon:'📦',cat:'inventory'},
+    {name:'Part Requests', href:'/inventory-requests', icon:'📋',cat:'inventory',badge:'req'},
+    {name:'Transfers',     href:'/inventory-transfers',icon:'🔄',cat:'inventory',badge:'trn'},
+    {name:'Invoices',      href:'/invoices',           icon:'📄',cat:'billing'},
+    {name:'Payments',      href:'/payments',           icon:'💳',cat:'billing'},
+    {name:'Reports',       href:'/reports',            icon:'📊',cat:'analytics'},
+  ],
+  MANAGER:[
+    {name:'Dashboard',     href:'/dashboard',          icon:'🏠',cat:'main'},
+    {name:'Team',          href:'/users',              icon:'👥',cat:'management'},
+    {name:'Customers',     href:'/customers',          icon:'🧑‍🤝‍🧑',cat:'crm'},
+    {name:'Vehicles',      href:'/vehicles',           icon:'🚗',cat:'crm'},
+    {name:'Jobs',          href:'/jobs',               icon:'🔧',cat:'operations'},
+    {name:'Inventory',     href:'/inventory',          icon:'📦',cat:'inventory'},
+    {name:'Part Requests', href:'/inventory-requests', icon:'📋',cat:'inventory',badge:'req'},
+    {name:'Transfers',     href:'/inventory-transfers',icon:'🔄',cat:'inventory',badge:'trn'},
+    {name:'Invoices',      href:'/invoices',           icon:'📄',cat:'billing'},
+    {name:'Reports',       href:'/reports',            icon:'📊',cat:'analytics'},
+  ],
+  EMPLOYEE:[
+    {name:'Dashboard',   href:'/dashboard',          icon:'🏠',cat:'main'},
+    {name:'My Jobs',     href:'/jobs',               icon:'🔧',cat:'operations'},
+    {name:'Vehicles',    href:'/vehicles',           icon:'🚗',cat:'crm'},
+    {name:'Inventory',   href:'/inventory',          icon:'📦',cat:'inventory'},
+    {name:'My Requests', href:'/inventory-requests', icon:'📋',cat:'inventory',badge:'req'},
+  ],
+  CASHIER:[
+    {name:'Dashboard', href:'/dashboard', icon:'🏠',cat:'main'},
+    {name:'Customers', href:'/customers', icon:'🧑‍🤝‍🧑',cat:'crm'},
+    {name:'Invoices',  href:'/invoices',  icon:'📄',cat:'billing'},
+    {name:'Payments',  href:'/payments',  icon:'💳',cat:'billing'},
+    {name:'Reports',   href:'/reports',   icon:'📊',cat:'analytics'},
+  ],
+};
+
+// ─── Main component ────────────────────────────────────────
 export default function Sidebar({ isOpen, onClose }) {
   const pathname = usePathname();
-  const router = useRouter();
-  const [user, setUser] = useState(null);
-  const [collapsed, setCollapsed] = useState(false);
-  const [screenSize, setScreenSize] = useState('desktop');
-  const [hoveredItem, setHoveredItem] = useState(null);
+  const router   = useRouter();
 
+  const [user,            setUser           ] = useState(null);
+  const [collapsed,       setCollapsed      ] = useState(false);
+  const [screen,          setScreen         ] = useState('desktop');
+  const [hovered,         setHovered        ] = useState(null);
+  const [openCats,        setOpenCats       ] = useState({});
+  const [mounted,         setMounted        ] = useState(false);
+
+  /* ── bootstrap ── */
   useEffect(() => {
-    const userData = localStorage.getItem('user');
-    if (userData) {
-      setUser(JSON.parse(userData));
-    }
+    setMounted(true);
+    const raw = localStorage.getItem('user');
+    if (raw) setUser(JSON.parse(raw));
   }, []);
 
+  /* ── screen size ── */
   useEffect(() => {
-    const checkScreenSize = () => {
-      const width = window.innerWidth;
-      if (width < 640) {
-        setScreenSize('mobile');
-      } else if (width < 1024) {
-        setScreenSize('tablet');
-      } else {
-        setScreenSize('desktop');
-      }
+    const check = () => {
+      const w = window.innerWidth;
+      setScreen(w < 640 ? 'mobile' : w < 1024 ? 'tablet' : 'desktop');
     };
-    
-    checkScreenSize();
-    window.addEventListener('resize', checkScreenSize);
-    return () => window.removeEventListener('resize', checkScreenSize);
+    check();
+    window.addEventListener('resize', check);
+    return () => window.removeEventListener('resize', check);
   }, []);
 
-  const handleLogout = async () => {
+  /* ── close on nav (mobile/tablet) ── */
+  useEffect(() => {
+    if (screen !== 'desktop' && isOpen) onClose?.();
+  }, [pathname]); // eslint-disable-line
+
+  /* ── logout ── */
+  const logout = async () => {
     try {
-      await fetch('/api/auth/logout', { method: 'POST' });
+      await fetch('/api/auth/logout', { method:'POST' });
       localStorage.removeItem('user');
       router.push('/login');
-    } catch (error) {
-      console.error('Logout error:', error);
-    }
+    } catch(e) { console.error(e); }
   };
 
-  // Enhanced role configurations
-  const roleConfig = {
-    SUPER_ADMIN: { 
-      label: 'Super Admin', 
-      gradient: 'linear-gradient(135deg, #7c3aed 0%, #5b21b6 100%)',
-      lightGradient: 'linear-gradient(135deg, rgba(124, 58, 237, 0.1) 0%, rgba(91, 33, 182, 0.1) 100%)',
-      color: '#7c3aed',
-      lightBg: 'rgba(124, 58, 237, 0.08)',
-      icon: '👑',
-      accentColor: '#a855f7'
-    },
-    MANAGER: { 
-      label: 'Manager', 
-      gradient: 'linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%)',
-      lightGradient: 'linear-gradient(135deg, rgba(37, 99, 235, 0.1) 0%, rgba(29, 78, 216, 0.1) 100%)',
-      color: '#2563eb',
-      lightBg: 'rgba(37, 99, 235, 0.08)',
-      icon: '👔',
-      accentColor: '#3b82f6'
-    },
-    EMPLOYEE: { 
-      label: 'Technician', 
-      gradient: 'linear-gradient(135deg, #059669 0%, #047857 100%)',
-      lightGradient: 'linear-gradient(135deg, rgba(5, 150, 105, 0.1) 0%, rgba(4, 120, 87, 0.1) 100%)',
-      color: '#059669',
-      lightBg: 'rgba(5, 150, 105, 0.08)',
-      icon: '🔧',
-      accentColor: '#10b981'
-    },
-    CASHIER: { 
-      label: 'Cashier', 
-      gradient: 'linear-gradient(135deg, #d97706 0%, #b45309 100%)',
-      lightGradient: 'linear-gradient(135deg, rgba(217, 119, 6, 0.1) 0%, rgba(180, 83, 9, 0.1) 100%)',
-      color: '#d97706',
-      lightBg: 'rgba(217, 119, 6, 0.08)',
-      icon: '💰',
-      accentColor: '#f59e0b'
-    },
-  };
+  const rc         = ROLES[user?.role] || ROLES.EMPLOYEE;
+  const isMobile   = screen === 'mobile';
+  const isTablet   = screen === 'tablet';
+  const isCollapsed= collapsed && !isMobile && !isTablet;
+  const W          = isCollapsed ? 76 : isMobile ? 282 : 270;
 
-  const userRoleConfig = roleConfig[user?.role] || roleConfig.EMPLOYEE;
-
-  const getNavigationItems = () => {
-    const baseItems = [
-      {
-        name: 'Dashboard',
-        href: '/dashboard',
-        icon: '🏠',
-        roles: ['SUPER_ADMIN', 'MANAGER', 'EMPLOYEE', 'CASHIER'],
-        category: 'main'
-      }
-    ];
-
-    const roleItems = {
-      SUPER_ADMIN: [
-        { name: 'Users', href: '/users', icon: '👥', category: 'management' },
-        { name: 'Branches', href: '/branches', icon: '🏢', category: 'management' },
-        { name: 'Customers', href: '/customers', icon: '🧑‍🤝‍🧑', category: 'crm' },
-        { name: 'Vehicles', href: '/vehicles', icon: '🚗', category: 'crm' },
-        { name: 'Jobs', href: '/jobs', icon: '🔧', category: 'operations' },
-        { name: 'Inventory', href: '/inventory', icon: '📦', category: 'inventory' },
-        { name: 'Part Requests', href: '/inventory-requests', icon: '📋', badge: 'requestCount', category: 'inventory' },
-        { name: 'Transfers', href: '/inventory-transfers', icon: '🔄', badge: 'transferCount', category: 'inventory' },
-        { name: 'Invoices', href: '/invoices', icon: '📄', category: 'billing' },
-        { name: 'Payments', href: '/payments', icon: '💳', category: 'billing' },
-        { name: 'Reports', href: '/reports', icon: '📊', category: 'analytics' },
-      ],
-      MANAGER: [
-        { name: 'Team', href: '/users', icon: '👥', category: 'management' },
-        { name: 'Customers', href: '/customers', icon: '🧑‍🤝‍🧑', category: 'crm' },
-        { name: 'Vehicles', href: '/vehicles', icon: '🚗', category: 'crm' },
-        { name: 'Jobs', href: '/jobs', icon: '🔧', category: 'operations' },
-        { name: 'Inventory', href: '/inventory', icon: '📦', category: 'inventory' },
-        { name: 'Part Requests', href: '/inventory-requests', icon: '📋', badge: 'requestCount', category: 'inventory' },
-        { name: 'Transfers', href: '/inventory-transfers', icon: '🔄', badge: 'transferCount', category: 'inventory' },
-        { name: 'Invoices', href: '/invoices', icon: '📄', category: 'billing' },
-        { name: 'Reports', href: '/reports', icon: '📊', category: 'analytics' },
-      ],
-      EMPLOYEE: [
-        { name: 'My Jobs', href: '/jobs', icon: '🔧', category: 'operations' },
-        { name: 'Vehicles', href: '/vehicles', icon: '🚗', category: 'crm' },
-        { name: 'Inventory', href: '/inventory', icon: '📦', category: 'inventory' },
-        { name: 'My Requests', href: '/inventory-requests', icon: '📋', badge: 'requestCount', category: 'inventory' },
-      ],
-      CASHIER: [
-        { name: 'Customers', href: '/customers', icon: '🧑‍🤝‍🧑', category: 'crm' },
-        { name: 'Invoices', href: '/invoices', icon: '📄', category: 'billing' },
-        { name: 'Payments', href: '/payments', icon: '💳', category: 'billing' },
-        { name: 'Reports', href: '/reports', icon: '📊', category: 'analytics' },
-      ],
-    };
-
-    return [...baseItems, ...(roleItems[user?.role] || [])];
-  };
-
-  const navigationItems = getNavigationItems();
-  const isMobile = screenSize === 'mobile';
-  const isTablet = screenSize === 'tablet';
-
-  // Group items by category
-  const groupedItems = navigationItems.reduce((acc, item) => {
-    const category = item.category || 'main';
-    if (!acc[category]) acc[category] = [];
-    acc[category].push(item);
+  /* ── group nav items ── */
+  const items  = NAV_ITEMS[user?.role] || NAV_ITEMS.EMPLOYEE;
+  const groups = items.reduce((acc, item) => {
+    const c = item.cat || 'main';
+    (acc[c] ??= []).push(item);
     return acc;
   }, {});
 
-  const categoryLabels = {
-    main: null,
-    management: 'Management',
-    crm: 'Customers',
-    operations: 'Operations',
-    inventory: 'Inventory',
-    billing: 'Billing',
-    analytics: 'Analytics'
-  };
+  const toggleCat = (cat) =>
+    setOpenCats(p => ({ ...p, [cat]: !p[cat] }));
 
   return (
     <>
-      {/* Mobile Overlay */}
+      <SidebarCSS />
+
+      {/* ── overlay ── */}
       {isOpen && (isMobile || isTablet) && (
-        <div 
+        <div
+          className="sb-overlay"
           onClick={onClose}
           style={{
-            position: 'fixed',
-            inset: 0,
-            background: 'rgba(0,0,0,0.6)',
-            backdropFilter: 'blur(4px)',
-            zIndex: 40,
-            animation: 'fadeIn 0.2s ease-out'
+            position:'fixed', inset:0, zIndex:40,
+            background:'rgba(0,0,0,.65)',
+            backdropFilter:'blur(6px)',
+            WebkitBackdropFilter:'blur(6px)',
           }}
         />
       )}
 
-      {/* Sidebar */}
+      {/* ── sidebar shell ── */}
       <aside style={{
-        position: 'fixed',
-        top: 0,
-        left: 0,
-        zIndex: 50,
-        height: '100%',
-        background: 'white',
-        borderRight: '1px solid rgba(0,0,0,0.06)',
-        transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
-        transform: (isMobile || isTablet)
-          ? (isOpen ? 'translateX(0)' : 'translateX(-100%)')
+        position:'fixed', top:0, left:0, bottom:0,
+        zIndex:50, width:W,
+        transform:(isMobile||isTablet)
+          ? (isOpen?'translateX(0)':'translateX(-100%)')
           : 'translateX(0)',
-        width: collapsed && !isMobile && !isTablet ? '80px' : isMobile ? '280px' : '270px',
-        display: 'flex',
-        flexDirection: 'column',
-        boxShadow: '4px 0 20px rgba(0,0,0,0.08)'
+        transition:'width .32s cubic-bezier(.4,0,.2,1), transform .32s cubic-bezier(.4,0,.2,1)',
+        display:'flex', flexDirection:'column',
+        background:'linear-gradient(180deg,#0b1120 0%,#0f1729 55%,#0c1222 100%)',
+        borderRight:'1px solid rgba(255,255,255,.055)',
+        boxShadow:'6px 0 40px rgba(0,0,0,.55)',
+        overflow:'hidden',
       }}>
-        {/* Logo Header */}
-        <div style={{
-          height: isMobile ? '60px' : '68px',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          padding: collapsed ? '0 16px' : '0 20px',
-          borderBottom: '1px solid rgba(0,0,0,0.06)',
-          background: userRoleConfig.gradient,
-          position: 'relative',
-          overflow: 'hidden'
-        }}>
-          {/* Decorative elements */}
-          <div style={{
-            position: 'absolute',
-            top: '-50%',
-            right: '-20%',
-            width: '100px',
-            height: '100px',
-            borderRadius: '50%',
-            background: 'rgba(255,255,255,0.1)'
-          }} />
-          <div style={{
-            position: 'absolute',
-            bottom: '-30%',
-            left: '10%',
-            width: '60px',
-            height: '60px',
-            borderRadius: '50%',
-            background: 'rgba(255,255,255,0.05)'
-          }} />
 
-          {(!collapsed || isMobile || isTablet) && (
-            <div style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '12px',
-              position: 'relative',
-              zIndex: 1
-            }}>
-              <div style={{
-                width: '40px',
-                height: '40px',
-                borderRadius: '12px',
-                background: 'rgba(255,255,255,0.2)',
-                backdropFilter: 'blur(10px)',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                fontSize: '22px',
-                border: '2px solid rgba(255,255,255,0.3)',
-                boxShadow: '0 4px 12px rgba(0,0,0,0.1)'
-              }}>
-                🚗
-              </div>
-              <div>
-                <span style={{
-                  fontSize: '18px',
-                  fontWeight: '800',
-                  color: 'white',
-                  letterSpacing: '-0.5px',
-                  display: 'block'
-                }}>
-                  AutoBill Pro
-                </span>
-                <span style={{
-                  fontSize: '10px',
-                  color: 'rgba(255,255,255,0.7)',
-                  textTransform: 'uppercase',
-                  letterSpacing: '1px'
-                }}>
-                  {userRoleConfig.label}
-                </span>
-              </div>
-            </div>
-          )}
+        {/* ════ HEADER ════ */}
+        <SidebarHeader
+          rc={rc} collapsed={isCollapsed}
+          isMobile={isMobile} isTablet={isTablet}
+          mounted={mounted}
+          onCollapse={() => setCollapsed(p=>!p)}
+          onClose={onClose}
+        />
 
-          {collapsed && !isMobile && !isTablet && (
-            <div style={{
-              width: '40px',
-              height: '40px',
-              borderRadius: '12px',
-              background: 'rgba(255,255,255,0.2)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              fontSize: '22px',
-              margin: '0 auto'
-            }}>
-              🚗
-            </div>
-          )}
-
-          {/* Collapse/Close Button */}
-          {!isMobile && !isTablet ? (
-            <button
-              onClick={() => setCollapsed(!collapsed)}
-              style={{
-                padding: '8px',
-                borderRadius: '10px',
-                border: 'none',
-                background: 'rgba(255,255,255,0.15)',
-                backdropFilter: 'blur(10px)',
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                transition: 'all 0.2s ease',
-                position: 'relative',
-                zIndex: 1
-              }}
-              onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.25)'}
-              onMouseLeave={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.15)'}
-            >
-              <svg 
-                style={{ 
-                  width: '18px', 
-                  height: '18px', 
-                  color: 'white',
-                  transition: 'transform 0.3s ease',
-                  transform: collapsed ? 'rotate(180deg)' : 'rotate(0deg)'
-                }} 
-                fill="none" 
-                stroke="currentColor" 
-                viewBox="0 0 24 24"
-              >
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 19l-7-7 7-7m8 14l-7-7 7-7" />
-              </svg>
-            </button>
-          ) : (
-            <button 
-              onClick={onClose}
-              style={{
-                padding: '8px',
-                borderRadius: '10px',
-                border: 'none',
-                background: 'rgba(255,255,255,0.15)',
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                position: 'relative',
-                zIndex: 1
-              }}
-            >
-              <svg style={{ width: '20px', height: '20px', color: 'white' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-              </svg>
-            </button>
-          )}
-        </div>
-
-        {/* User Info */}
-        {user && (!collapsed || isMobile || isTablet) && (
-          <div style={{
-            padding: '16px 20px',
-            borderBottom: '1px solid rgba(0,0,0,0.06)',
-            background: userRoleConfig.lightBg
-          }}>
-            <div style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '12px'
-            }}>
-              <div style={{
-                width: '48px',
-                height: '48px',
-                borderRadius: '14px',
-                background: userRoleConfig.gradient,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                color: 'white',
-                fontWeight: '700',
-                fontSize: '18px',
-                flexShrink: 0,
-                boxShadow: `0 4px 14px ${userRoleConfig.color}40`,
-                border: '3px solid white'
-              }}>
-                {user.name?.charAt(0).toUpperCase()}
-              </div>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <p style={{
-                  fontWeight: '700',
-                  color: '#1f2937',
-                  margin: 0,
-                  fontSize: '15px',
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis',
-                  whiteSpace: 'nowrap'
-                }}>
-                  {user.name}
-                </p>
-                <div style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '6px',
-                  marginTop: '4px'
-                }}>
-                  <span style={{
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: '4px',
-                    padding: '2px 8px',
-                    background: 'white',
-                    borderRadius: '6px',
-                    fontSize: '11px',
-                    fontWeight: '600',
-                    color: userRoleConfig.color,
-                    boxShadow: '0 1px 2px rgba(0,0,0,0.05)'
-                  }}>
-                    {userRoleConfig.icon} {userRoleConfig.label}
-                  </span>
-                </div>
-              </div>
-            </div>
-          </div>
+        {/* ════ USER CARD ════ */}
+        {user && (
+          <SidebarUserCard
+            user={user} rc={rc}
+            collapsed={isCollapsed}
+          />
         )}
 
-        {/* Collapsed User Avatar */}
-        {user && collapsed && !isMobile && !isTablet && (
-          <div style={{
-            padding: '16px 0',
-            display: 'flex',
-            justifyContent: 'center',
-            borderBottom: '1px solid rgba(0,0,0,0.06)'
-          }}>
-            <div style={{
-              width: '44px',
-              height: '44px',
-              borderRadius: '12px',
-              background: userRoleConfig.gradient,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              color: 'white',
-              fontWeight: '700',
-              fontSize: '16px',
-              boxShadow: `0 4px 12px ${userRoleConfig.color}40`
-            }}>
-              {user.name?.charAt(0).toUpperCase()}
-            </div>
-          </div>
-        )}
-
-        {/* Navigation */}
-        <nav style={{
-          padding: collapsed && !isMobile && !isTablet ? '12px 8px' : '12px 16px',
-          flex: 1,
-          overflowY: 'auto',
-          overflowX: 'hidden'
+        {/* ════ NAV ════ */}
+        <nav className="sb-nav" style={{
+          flex:1, overflowY:'auto', overflowX:'hidden',
+          padding: isCollapsed ? '10px 8px' : '8px 10px',
         }}>
-          {Object.entries(groupedItems).map(([category, items], categoryIndex) => (
-            <div key={category}>
-              {/* Category Label */}
-              {categoryLabels[category] && (!collapsed || isMobile || isTablet) && (
-                <div style={{
-                  padding: categoryIndex === 0 ? '4px 8px 10px' : '20px 8px 10px',
-                  fontSize: '10px',
-                  fontWeight: '700',
-                  color: '#9ca3af',
-                  textTransform: 'uppercase',
-                  letterSpacing: '1px'
-                }}>
-                  {categoryLabels[category]}
-                </div>
-              )}
-              
-              {/* Separator for collapsed mode */}
-              {categoryLabels[category] && collapsed && !isMobile && !isTablet && categoryIndex > 0 && (
-                <div style={{
-                  height: '1px',
-                  background: 'rgba(0,0,0,0.06)',
-                  margin: '12px 8px'
-                }} />
-              )}
+          {Object.entries(groups).map(([cat, catItems], ci) => {
+            const meta  = CAT_META[cat] || { label: cat };
+            const isOpen= openCats[cat] !== false; // default open
 
-              {/* Navigation Items */}
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                {items.map((item, index) => (
-                  <NavItem
-                    key={item.href}
-                    item={item}
-                    isActive={pathname === item.href}
-                    collapsed={collapsed && !isMobile && !isTablet}
-                    onClick={onClose}
-                    index={index}
-                    userRoleConfig={userRoleConfig}
-                    isHovered={hoveredItem === item.href}
-                    onHover={() => setHoveredItem(item.href)}
-                    onLeave={() => setHoveredItem(null)}
-                  />
-                ))}
+            return (
+              <div key={cat} style={{
+                marginBottom: meta.label ? 2 : 0,
+                animation:`sb-slide-up .4s ease ${ci*.07}s backwards`,
+              }}>
+                {/* category header */}
+                {meta.label && !isCollapsed && (
+                  <button
+                    onClick={() => toggleCat(cat)}
+                    style={{
+                      display:'flex', alignItems:'center',
+                      justifyContent:'space-between',
+                      width:'100%', padding:'9px 10px 5px',
+                      background:'none', border:'none', cursor:'pointer',
+                    }}
+                  >
+                    <span style={{
+                      fontSize:9, fontWeight:800,
+                      color:'rgba(255,255,255,.28)',
+                      textTransform:'uppercase', letterSpacing:'1.4px',
+                    }}>
+                      {meta.label}
+                    </span>
+                    <svg style={{
+                      width:11, height:11,
+                      color:'rgba(255,255,255,.2)',
+                      transition:'transform .3s ease',
+                      transform: isOpen ? 'rotate(180deg)' : 'rotate(0)',
+                    }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round"
+                        strokeWidth={2.5} d="M19 9l-7 7-7-7"/>
+                    </svg>
+                  </button>
+                )}
+
+                {/* collapsed divider */}
+                {meta.label && isCollapsed && ci > 0 && (
+                  <div style={{
+                    height:1, margin:'8px 10px',
+                    background:'rgba(255,255,255,.07)',
+                  }}/>
+                )}
+
+                {/* items */}
+                <div style={{
+                  maxHeight:(!meta.label||isOpen||isCollapsed) ? 800 : 0,
+                  overflow:'hidden',
+                  transition:'max-height .38s cubic-bezier(.4,0,.2,1)',
+                }}>
+                  <div style={{ display:'flex', flexDirection:'column', gap:1 }}>
+                    {catItems.map((item, i) => (
+                      <SidebarLink
+                        key={item.href}
+                        item={item}
+                        isActive={pathname === item.href}
+                        collapsed={isCollapsed}
+                        rc={rc}
+                        isMobile={isMobile}
+                        isHovered={hovered === item.href}
+                        onHover={() => setHovered(item.href)}
+                        onLeave={() => setHovered(null)}
+                        onClick={onClose}
+                        animDelay={i * .05}
+                      />
+                    ))}
+                  </div>
+                </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </nav>
 
-        {/* Bottom Section */}
-        <div style={{
-          padding: collapsed && !isMobile && !isTablet ? '12px 8px' : '12px 16px',
-          borderTop: '1px solid rgba(0,0,0,0.06)',
-          background: 'rgba(0,0,0,0.02)'
-        }}>
-         
-
-          {/* Logout Button */}
-          <button
-            onClick={handleLogout}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: collapsed && !isMobile && !isTablet ? 0 : '12px',
-              justifyContent: collapsed && !isMobile && !isTablet ? 'center' : 'flex-start',
-              width: '100%',
-              padding: '12px 14px',
-              borderRadius: '12px',
-              border: 'none',
-              background: 'transparent',
-              cursor: 'pointer',
-              transition: 'all 0.2s ease',
-              color: '#6b7280',
-              fontWeight: '600',
-              fontSize: '14px'
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.background = 'rgba(239, 68, 68, 0.08)';
-              e.currentTarget.style.color = '#ef4444';
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.background = 'transparent';
-              e.currentTarget.style.color = '#6b7280';
-            }}
-            title={collapsed ? 'Logout' : ''}
-          >
-            <svg style={{ width: '20px', height: '20px', flexShrink: 0 }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
-            </svg>
-            {(!collapsed || isMobile || isTablet) && <span>Logout</span>}
-          </button>
-        </div>
+        {/* ════ FOOTER ════ */}
+        <SidebarFooter
+          rc={rc} collapsed={isCollapsed}
+          onLogout={logout}
+        />
       </aside>
-
-      <style jsx global>{`
-        @keyframes fadeIn {
-          from { opacity: 0; }
-          to { opacity: 1; }
-        }
-        
-        /* Custom Scrollbar */
-        nav::-webkit-scrollbar {
-          width: 6px;
-        }
-        nav::-webkit-scrollbar-track {
-          background: transparent;
-        }
-        nav::-webkit-scrollbar-thumb {
-          background: rgba(0,0,0,0.1);
-          border-radius: 3px;
-        }
-        nav::-webkit-scrollbar-thumb:hover {
-          background: rgba(0,0,0,0.2);
-        }
-      `}</style>
     </>
   );
 }
 
-function NavItem({ item, isActive, collapsed, onClick, index, userRoleConfig, isHovered, onHover, onLeave }) {
-  const [badgeCount, setBadgeCount] = useState(0);
+// ─── Header sub-component ─────────────────────────────────
+function SidebarHeader({ rc, collapsed, isMobile, isTablet, mounted, onCollapse, onClose }) {
+  return (
+    <div style={{
+      height: isMobile ? 60 : 68,
+      display:'flex', alignItems:'center',
+      justifyContent: collapsed ? 'center' : 'space-between',
+      padding: collapsed ? '0 10px' : '0 16px',
+      borderBottom:'1px solid rgba(255,255,255,.055)',
+      background:'rgba(255,255,255,.018)',
+      position:'relative', overflow:'hidden', flexShrink:0,
+    }}>
+      {/* ambient glow */}
+      <div style={{
+        position:'absolute', top:-50, right:-50,
+        width:120, height:120, borderRadius:'50%',
+        background:rc.g, opacity:.07, filter:'blur(28px)',
+        animation:'sb-glow-pulse 4s ease-in-out infinite',
+        pointerEvents:'none',
+      }}/>
 
+      {/* logo / brand */}
+      {!collapsed ? (
+        <div style={{
+          display:'flex', alignItems:'center', gap:11,
+          position:'relative', zIndex:1,
+          animation: mounted ? 'sb-fade-in .45s ease' : 'none',
+        }}>
+          <div className="sb-logo-icon" style={{
+            width:38, height:38, borderRadius:11,
+            background:rc.g,
+            display:'flex', alignItems:'center', justifyContent:'center',
+            fontSize:19,
+            boxShadow:`0 4px 18px ${rc.glow}`,
+            border:'1px solid rgba(255,255,255,.16)',
+            flexShrink:0,
+          }}>🚗</div>
+
+          <div>
+            <span style={{
+              display:'block', fontSize:16, fontWeight:900,
+              color:'white', letterSpacing:'-.6px', lineHeight:1.1,
+            }}>
+              Auto<span style={{ color:rc.c }}>Bill</span>
+            </span>
+            <span style={{
+              display:'block', fontSize:9,
+              color:'rgba(255,255,255,.35)',
+              textTransform:'uppercase', letterSpacing:'1.6px', fontWeight:700,
+            }}>
+              {rc.label}
+            </span>
+          </div>
+        </div>
+      ) : (
+        <div className="sb-logo-icon" style={{
+          width:40, height:40, borderRadius:12,
+          background:rc.g,
+          display:'flex', alignItems:'center', justifyContent:'center',
+          fontSize:20, boxShadow:`0 4px 18px ${rc.glow}`,
+        }}>🚗</div>
+      )}
+
+      {/* collapse / close button */}
+      {(!isMobile && !isTablet) ? (
+        <button
+          onClick={onCollapse}
+          className="sb-collapse-btn"
+          style={{
+            width:28, height:28, borderRadius:8,
+            border:'1px solid rgba(255,255,255,.08)',
+            background:'rgba(255,255,255,.04)',
+            cursor:'pointer', flexShrink:0,
+            display:'flex', alignItems:'center', justifyContent:'center',
+            transition:'all .22s ease', position:'relative', zIndex:1,
+          }}
+        >
+          <svg style={{
+            width:13, height:13,
+            color:'rgba(255,255,255,.45)',
+            transition:'transform .35s ease',
+            transform: collapsed ? 'rotate(180deg)' : 'rotate(0)',
+          }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round"
+              strokeWidth={2.5} d="M11 19l-7-7 7-7m8 14l-7-7 7-7"/>
+          </svg>
+        </button>
+      ) : (
+        <button
+          onClick={onClose}
+          style={{
+            width:32, height:32, borderRadius:9,
+            border:'1px solid rgba(255,255,255,.08)',
+            background:'rgba(255,255,255,.055)',
+            cursor:'pointer', flexShrink:0,
+            display:'flex', alignItems:'center', justifyContent:'center',
+            position:'relative', zIndex:1, transition:'all .2s',
+          }}
+        >
+          <svg style={{ width:17, height:17, color:'rgba(255,255,255,.6)' }}
+            fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round"
+              strokeWidth={2.5} d="M6 18L18 6M6 6l12 12"/>
+          </svg>
+        </button>
+      )}
+    </div>
+  );
+}
+
+// ─── User card ─────────────────────────────────────────────
+function SidebarUserCard({ user, rc, collapsed }) {
+  return (
+    <div style={{
+      padding: collapsed ? '14px 0' : '14px 16px',
+      borderBottom:'1px solid rgba(255,255,255,.05)',
+      display:'flex',
+      alignItems: collapsed ? 'center' : 'flex-start',
+      justifyContent: collapsed ? 'center' : 'flex-start',
+      gap: collapsed ? 0 : 11,
+      background:'rgba(255,255,255,.012)',
+      flexShrink:0,
+    }}>
+      {/* avatar */}
+      <div style={{ position:'relative', flexShrink:0 }}>
+        <div className="sb-avatar" style={{
+          width: collapsed ? 40 : 44,
+          height: collapsed ? 40 : 44,
+          borderRadius: collapsed ? 13 : 15,
+          background: rc.g,
+          display:'flex', alignItems:'center', justifyContent:'center',
+          color:'white', fontWeight:800,
+          fontSize: collapsed ? 15 : 17,
+          boxShadow:`0 4px 16px ${rc.glow}`,
+          border:'2px solid rgba(255,255,255,.13)',
+          transition:'all .3s ease', cursor:'default',
+        }}>
+          {user.name?.charAt(0).toUpperCase()}
+        </div>
+
+        {/* online dot */}
+        <div style={{
+          position:'absolute', bottom:-1, right:-1,
+          width:10, height:10, borderRadius:'50%',
+          background:'#10b981',
+          border:'2px solid #0b1120',
+          boxShadow:'0 0 0 2px rgba(16,185,129,.3)',
+        }}>
+          <div style={{
+            position:'absolute', inset:0, borderRadius:'50%',
+            background:'#10b981',
+            animation:'sb-online-ping 2.4s ease-in-out infinite',
+          }}/>
+        </div>
+      </div>
+
+      {/* info */}
+      {!collapsed && (
+        <div style={{
+          flex:1, minWidth:0,
+          animation:'sb-fade-in .3s ease',
+        }}>
+          <p style={{
+            margin:0, fontWeight:700, color:'white',
+            fontSize:13.5,
+            overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap',
+          }}>
+            {user.name}
+          </p>
+          <p style={{
+            margin:'2px 0 0',
+            fontSize:11, color:'rgba(255,255,255,.4)',
+            overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap',
+          }}>
+            {user.email}
+          </p>
+          <div style={{
+            display:'inline-flex', alignItems:'center', gap:4,
+            marginTop:6, padding:'2px 8px',
+            background:rc.dim, borderRadius:6,
+            border:`1px solid ${rc.c}22`,
+          }}>
+            <span style={{ fontSize:10 }}>{rc.icon}</span>
+            <span style={{ fontSize:10, fontWeight:700, color:rc.c }}>
+              {rc.label}
+            </span>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Nav link ──────────────────────────────────────────────
+function SidebarLink({
+  item, isActive, collapsed, rc,
+  isMobile, isHovered, onHover, onLeave, onClick, animDelay,
+}) {
+  const [badge,       setBadge      ] = useState(0);
+  const [showTip,     setShowTip    ] = useState(false);
+
+  /* fetch badge count */
   useEffect(() => {
     if (!item.badge) return;
-
-    const fetchBadgeCount = async () => {
+    const fetch_ = async () => {
       try {
-        let url = '';
-        if (item.badge === 'requestCount') {
-          url = '/api/inventory-requests?status=PENDING';
-        } else if (item.badge === 'transferCount') {
-          url = '/api/inventory-transfers?status=REQUESTED';
-        }
-
-        if (url) {
-          const response = await fetch(url);
-          const data = await response.json();
-          if (data.success) {
-            setBadgeCount(data.data?.length || 0);
-          }
-        }
-      } catch (error) {
-        // Silently fail
-      }
+        const url = item.badge === 'req'
+          ? '/api/inventory-requests?status=PENDING'
+          : '/api/inventory-transfers?status=REQUESTED';
+        const r = await fetch(url);
+        const d = await r.json();
+        if (d.success) setBadge(d.data?.length || 0);
+      } catch {}
     };
-
-    fetchBadgeCount();
-    const interval = setInterval(fetchBadgeCount, 60000);
-    return () => clearInterval(interval);
+    fetch_();
+    const t = setInterval(fetch_, 60000);
+    return () => clearInterval(t);
   }, [item.badge]);
 
+  const bg    = isActive ? rc.dim : isHovered ? 'rgba(255,255,255,.055)' : 'transparent';
+  const color = isActive ? rc.c  : isHovered  ? 'rgba(255,255,255,.85)' : 'rgba(255,255,255,.45)';
+
   return (
-    <Link
-      href={item.href}
-      onClick={onClick}
-      onMouseEnter={onHover}
-      onMouseLeave={onLeave}
-      style={{
-        display: 'flex',
-        alignItems: 'center',
-        gap: collapsed ? 0 : '12px',
-        justifyContent: collapsed ? 'center' : 'flex-start',
-        padding: collapsed ? '12px' : '11px 14px',
-        borderRadius: '12px',
-        textDecoration: 'none',
-        transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
-        background: isActive 
-          ? userRoleConfig.lightGradient
-          : isHovered 
-            ? 'rgba(0,0,0,0.04)' 
-            : 'transparent',
-        color: isActive ? userRoleConfig.color : '#6b7280',
-        fontWeight: isActive ? '700' : '500',
-        fontSize: '14px',
-        position: 'relative',
-        border: isActive ? `1px solid ${userRoleConfig.color}20` : '1px solid transparent',
-      }}
-      title={collapsed ? item.name : ''}
+    <div
+      style={{ position:'relative' }}
+      onMouseEnter={() => { onHover(); if(collapsed) setShowTip(true); }}
+      onMouseLeave={() => { onLeave(); setShowTip(false); }}
     >
-      {/* Active indicator */}
-      {isActive && (
-        <div style={{
-          position: 'absolute',
-          left: collapsed ? '50%' : '-1px',
-          transform: collapsed ? 'translateX(-50%)' : 'none',
-          top: collapsed ? 'auto' : '50%',
-          bottom: collapsed ? '-1px' : 'auto',
-          width: collapsed ? '50%' : '4px',
-          height: collapsed ? '3px' : '50%',
-          marginTop: collapsed ? 0 : '-25%',
-          background: userRoleConfig.gradient,
-          borderRadius: collapsed ? '3px 3px 0 0' : '0 4px 4px 0'
-        }} />
-      )}
-
-      <span style={{ 
-        fontSize: '20px',
-        flexShrink: 0,
-        filter: isActive ? 'none' : 'grayscale(30%)',
-        transition: 'all 0.2s ease',
-        transform: isHovered ? 'scale(1.1)' : 'scale(1)',
-        position: 'relative',
-        lineHeight: 1
-      }}>
-        {item.icon}
-        {collapsed && badgeCount > 0 && (
-          <span style={{
-            position: 'absolute',
-            top: '-6px',
-            right: '-8px',
-            minWidth: '16px',
-            height: '16px',
-            background: '#ef4444',
-            borderRadius: '8px',
-            color: 'white',
-            fontSize: '9px',
-            fontWeight: '700',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            padding: '0 3px',
-            border: '2px solid white',
-            boxShadow: '0 2px 4px rgba(239,68,68,0.3)'
-          }}>
-            {badgeCount > 9 ? '9+' : badgeCount}
-          </span>
+      <Link
+        href={item.href}
+        onClick={onClick}
+        className="sb-link"
+        style={{
+          display:'flex', alignItems:'center',
+          gap: collapsed ? 0 : 10,
+          justifyContent: collapsed ? 'center' : 'flex-start',
+          padding: collapsed ? '11px' : '9px 11px',
+          borderRadius:11,
+          textDecoration:'none',
+          background: bg,
+          color,
+          fontWeight: isActive ? 700 : 500,
+          fontSize:13,
+          position:'relative',
+          border:`1px solid ${isActive ? `${rc.c}1a` : 'transparent'}`,
+          animation:`sb-slide-up .38s ease ${animDelay}s backwards`,
+        }}
+      >
+        {/* left active bar */}
+        {isActive && !collapsed && (
+          <div style={{
+            position:'absolute', left:-1, top:'18%',
+            width:3, height:'64%',
+            background:rc.g, borderRadius:3,
+            boxShadow:`0 0 10px ${rc.glow}`,
+          }}/>
         )}
-      </span>
 
-      {!collapsed && (
-        <>
-          <span style={{ flex: 1, lineHeight: 1.2 }}>{item.name}</span>
-          
-          {badgeCount > 0 && (
-            <span style={{
-              minWidth: '22px',
-              height: '22px',
-              background: isActive 
-                ? userRoleConfig.gradient 
-                : '#ef4444',
-              borderRadius: '11px',
-              color: 'white',
-              fontSize: '11px',
-              fontWeight: '700',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              padding: '0 6px',
-              flexShrink: 0,
-              boxShadow: '0 2px 6px rgba(239,68,68,0.3)'
+        {/* bottom active bar (collapsed) */}
+        {isActive && collapsed && (
+          <div style={{
+            position:'absolute', bottom:-1,
+            left:'50%', transform:'translateX(-50%)',
+            width:'45%', height:2.5,
+            background:rc.g, borderRadius:'2px 2px 0 0',
+            boxShadow:`0 0 8px ${rc.glow}`,
+          }}/>
+        )}
+
+        {/* icon */}
+        <span style={{
+          fontSize:17.5, flexShrink:0, lineHeight:1,
+          position:'relative',
+          transition:'transform .22s ease',
+          transform:(isHovered && !isMobile) ? 'scale(1.18)' : 'scale(1)',
+          filter: isActive ? 'none' : 'grayscale(30%)',
+        }}>
+          {item.icon}
+
+          {/* collapsed badge */}
+          {collapsed && badge > 0 && (
+            <span className="sb-badge" style={{
+              position:'absolute', top:-6, right:-8,
+              minWidth:14, height:14, borderRadius:7,
+              background:'#ef4444', color:'white',
+              fontSize:8, fontWeight:800,
+              display:'flex', alignItems:'center', justifyContent:'center',
+              padding:'0 2px', border:'2px solid #0b1120',
             }}>
-              {badgeCount > 99 ? '99+' : badgeCount}
+              {badge > 9 ? '9+' : badge}
             </span>
           )}
+        </span>
 
-          {isActive && !badgeCount && (
-            <div style={{
-              width: '8px',
-              height: '8px',
-              borderRadius: '50%',
-              background: userRoleConfig.gradient,
-              flexShrink: 0,
-              boxShadow: `0 0 0 3px ${userRoleConfig.color}20`
-            }} />
+        {/* label + badge */}
+        {!collapsed && (
+          <>
+            <span style={{ flex:1, lineHeight:1.3 }}>{item.name}</span>
+            {badge > 0 && (
+              <span className="sb-badge" style={{
+                minWidth:20, height:20, borderRadius:10,
+                background: isActive ? rc.g : 'rgba(239,68,68,.9)',
+                color:'white', fontSize:10, fontWeight:800,
+                display:'flex', alignItems:'center', justifyContent:'center',
+                padding:'0 5px', flexShrink:0,
+                boxShadow:'0 2px 8px rgba(239,68,68,.35)',
+              }}>
+                {badge > 99 ? '99+' : badge}
+              </span>
+            )}
+            {isActive && !badge && (
+              <div style={{
+                width:6, height:6, borderRadius:'50%',
+                background:rc.g, flexShrink:0,
+                boxShadow:`0 0 0 3px ${rc.dim}`,
+              }}/>
+            )}
+          </>
+        )}
+      </Link>
+
+      {/* tooltip (collapsed desktop) */}
+      {collapsed && showTip && !isMobile && (
+        <div style={{
+          position:'absolute',
+          left:'calc(100% + 14px)',
+          top:'50%', transform:'translateY(-50%)',
+          padding:'6px 13px', borderRadius:9,
+          background:'rgba(13,19,36,.97)',
+          border:'1px solid rgba(255,255,255,.1)',
+          color:'white', fontSize:12, fontWeight:600,
+          whiteSpace:'nowrap', zIndex:200,
+          boxShadow:'0 10px 30px rgba(0,0,0,.5)',
+          animation:'sb-tooltip .2s ease',
+          pointerEvents:'none',
+        }}>
+          {item.name}
+          {badge > 0 && (
+            <span style={{
+              marginLeft:8, padding:'1px 6px',
+              background:'#ef4444', borderRadius:5,
+              fontSize:10, fontWeight:800,
+            }}>{badge}</span>
           )}
-        </>
+          {/* arrow */}
+          <div style={{
+            position:'absolute', left:-5, top:'50%',
+            transform:'translateY(-50%) rotate(45deg)',
+            width:9, height:9,
+            background:'rgba(13,19,36,.97)',
+            border:'1px solid rgba(255,255,255,.1)',
+            borderRight:'none', borderTop:'none',
+          }}/>
+        </div>
       )}
-    </Link>
+    </div>
+  );
+}
+
+// ─── Footer ────────────────────────────────────────────────
+function SidebarFooter({ rc, collapsed, onLogout }) {
+  const [hov, setHov] = useState(false);
+
+  return (
+    <div style={{
+      padding: collapsed ? '12px 8px' : '12px 12px',
+      borderTop:'1px solid rgba(255,255,255,.05)',
+      background:'rgba(0,0,0,.18)',
+      flexShrink:0,
+    }}>
+      {/* system status */}
+      {!collapsed && (
+        <div style={{
+          display:'flex', alignItems:'center', gap:7,
+          padding:'7px 10px', marginBottom:8,
+          borderRadius:10,
+          background:'rgba(255,255,255,.025)',
+          border:'1px solid rgba(255,255,255,.04)',
+        }}>
+          <div style={{
+            width:6, height:6, borderRadius:'50%',
+            background:'#10b981',
+            boxShadow:'0 0 8px rgba(16,185,129,.6)',
+          }}/>
+          <span style={{ fontSize:10, color:'rgba(255,255,255,.28)', fontWeight:600 }}>
+            System Online · v2.1.0
+          </span>
+        </div>
+      )}
+
+      <button
+        onClick={onLogout}
+        onMouseEnter={() => setHov(true)}
+        onMouseLeave={() => setHov(false)}
+        className="sb-logout-btn"
+        style={{
+          display:'flex', alignItems:'center',
+          gap: collapsed ? 0 : 11,
+          justifyContent: collapsed ? 'center' : 'flex-start',
+          width:'100%', padding: collapsed ? '11px' : '10px 12px',
+          borderRadius:11, border:'none',
+          background: hov ? 'rgba(239,68,68,.1)' : 'transparent',
+          cursor:'pointer',
+          color: hov ? '#f87171' : 'rgba(255,255,255,.4)',
+          fontWeight:600, fontSize:13,
+          transition:'all .22s ease',
+        }}
+        title={collapsed ? 'Logout' : ''}
+      >
+        <svg style={{ width:17, height:17, flexShrink:0 }}
+          fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+            d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/>
+        </svg>
+        {!collapsed && <span>Logout</span>}
+      </button>
+    </div>
   );
 }

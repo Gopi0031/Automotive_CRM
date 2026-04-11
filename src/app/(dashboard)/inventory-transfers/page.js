@@ -4,6 +4,66 @@
 import { useEffect, useState, useCallback } from 'react';
 import toast from 'react-hot-toast';
 
+const CSS = `
+  @keyframes trSlideUp  { from{opacity:0;transform:translateY(14px)} to{opacity:1;transform:translateY(0)} }
+  @keyframes trScaleIn  { from{opacity:0;transform:scale(.94)} to{opacity:1;transform:scale(1)} }
+  @keyframes trFadeIn   { from{opacity:0} to{opacity:1} }
+  @keyframes trSpin     { from{transform:rotate(0)} to{transform:rotate(360deg)} }
+  @keyframes trFloat    { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-6px)} }
+
+  .tr-glass {
+    background:rgba(255,255,255,.04);
+    backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);
+    border:1px solid rgba(255,255,255,.07);
+    border-radius:18px;
+    transition:all .3s cubic-bezier(.4,0,.2,1);
+  }
+  .tr-glass:hover{background:rgba(255,255,255,.06);border-color:rgba(255,255,255,.11)}
+  .tr-card-hover:hover{transform:translateY(-3px);box-shadow:0 16px 40px rgba(0,0,0,.35)}
+  .tr-stat:hover{transform:translateY(-4px);box-shadow:0 20px 48px rgba(0,0,0,.35)}
+  .tr-stat:hover .tr-stat-icon{transform:scale(1.12) rotate(6deg)}
+  .tr-btn{transition:all .22s ease;cursor:pointer}
+  .tr-btn:hover{transform:translateY(-1px)}
+  .tr-btn:active{transform:translateY(0) scale(.98)}
+  .tr-overlay{animation:trFadeIn .25s ease}
+  .tr-modal{animation:trScaleIn .3s cubic-bezier(.4,0,.2,1)}
+  .tr-input{
+    background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1);
+    border-radius:12px;padding:11px 14px;color:white;font-size:14px;
+    width:100%;outline:none;transition:all .22s ease;
+  }
+  .tr-input::placeholder{color:rgba(255,255,255,.28)}
+  .tr-input:focus{border-color:rgba(139,92,246,.5);background:rgba(255,255,255,.07);box-shadow:0 0 0 3px rgba(139,92,246,.12)}
+  .tr-select{
+    background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1);
+    border-radius:12px;padding:11px 14px;color:white;font-size:14px;
+    width:100%;outline:none;appearance:none;cursor:pointer;transition:all .22s ease;
+  }
+  .tr-select option{background:#1a1f35;color:white}
+  .tr-select:focus{border-color:rgba(139,92,246,.5);box-shadow:0 0 0 3px rgba(139,92,246,.12)}
+  .tr-label{display:block;font-size:11px;font-weight:700;color:rgba(255,255,255,.45);margin-bottom:6px;text-transform:uppercase;letter-spacing:.7px}
+  input[type=number]::-webkit-inner-spin-button,input[type=number]::-webkit-outer-spin-button{-webkit-appearance:none;margin:0}
+  input[type=number]{-moz-appearance:textfield}
+  @media(max-width:768px){.tr-stat:hover{transform:none}.tr-stat:hover .tr-stat-icon{transform:none}.tr-card-hover:hover{transform:none}}
+`;
+
+const STATUS_CFG = {
+  REQUESTED:  { label:'Requested',  icon:'📤', c:'#fcd34d', bg:'rgba(245,158,11,.12)', bd:'rgba(245,158,11,.25)' },
+  APPROVED:   { label:'Approved',   icon:'✅', c:'#93c5fd', bg:'rgba(59,130,246,.12)',  bd:'rgba(59,130,246,.25)' },
+  REJECTED:   { label:'Rejected',   icon:'❌', c:'#fca5a5', bg:'rgba(239,68,68,.12)',   bd:'rgba(239,68,68,.25)' },
+  IN_TRANSIT: { label:'In Transit', icon:'🚚', c:'#c4b5fd', bg:'rgba(139,92,246,.12)', bd:'rgba(139,92,246,.25)' },
+  RECEIVED:   { label:'Completed',  icon:'✓',  c:'#6ee7b7', bg:'rgba(16,185,129,.12)', bd:'rgba(16,185,129,.25)' },
+  CANCELLED:  { label:'Cancelled',  icon:'🚫', c:'rgba(255,255,255,.4)', bg:'rgba(255,255,255,.05)', bd:'rgba(255,255,255,.1)' },
+};
+const URGENCY_CFG = {
+  LOW:    { label:'Low',    icon:'🔵', c:'#93c5fd' },
+  MEDIUM: { label:'Medium', icon:'🟡', c:'#fcd34d' },
+  HIGH:   { label:'High',   icon:'🟠', c:'#fb923c' },
+  URGENT: { label:'Urgent', icon:'🔴', c:'#fca5a5' },
+};
+const gSC = s => STATUS_CFG[s] || STATUS_CFG.REQUESTED;
+const gUC = u => URGENCY_CFG[u] || URGENCY_CFG.MEDIUM;
+
 export default function InventoryTransfersPage() {
   const [transfers, setTransfers] = useState([]);
   const [branches, setBranches] = useState([]);
@@ -12,7 +72,6 @@ export default function InventoryTransfersPage() {
   const [currentUser, setCurrentUser] = useState(null);
   const [isMobile, setIsMobile] = useState(false);
 
-  // Modal states
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showDetailModal, setShowDetailModal] = useState(false);
   const [showActionModal, setShowActionModal] = useState(false);
@@ -20,412 +79,200 @@ export default function InventoryTransfersPage() {
   const [actionType, setActionType] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
-  // Filters
-  const [filters, setFilters] = useState({
-    status: '',
-    type: '', // 'incoming' or 'outgoing'
-  });
-
-  // Form data
+  const [filters, setFilters] = useState({ status: '', type: '' });
   const [formData, setFormData] = useState({
-    fromBranchId: '',
-    toBranchId: '',
-    notes: '',
-    urgency: 'MEDIUM',
+    fromBranchId: '', toBranchId: '', notes: '', urgency: 'MEDIUM',
     items: [{ partId: '', quantity: 1, notes: '' }],
   });
-
-  // Stats
-  const [stats, setStats] = useState({
-    total: 0,
-    pending: 0,
-    inTransit: 0,
-    completed: 0,
-  });
+  const [stats, setStats] = useState({ total: 0, pending: 0, inTransit: 0, completed: 0 });
 
   useEffect(() => {
-    const checkMobile = () => setIsMobile(window.innerWidth < 768);
-    checkMobile();
-    window.addEventListener('resize', checkMobile);
-    return () => window.removeEventListener('resize', checkMobile);
+    const c = () => setIsMobile(window.innerWidth < 768);
+    c(); window.addEventListener('resize', c);
+    return () => window.removeEventListener('resize', c);
   }, []);
 
   useEffect(() => {
-    const userData = localStorage.getItem('user');
-    if (userData) {
-      setCurrentUser(JSON.parse(userData));
-    }
-    fetchInitialData();
+    const u = localStorage.getItem('user');
+    if (u) setCurrentUser(JSON.parse(u));
+    fetchInitial();
   }, []);
 
-  useEffect(() => {
-    if (currentUser) {
-      fetchTransfers();
-    }
-  }, [filters, currentUser]);
+  useEffect(() => { if (currentUser) fetchTransfers(); }, [filters, currentUser]);
 
-  const fetchInitialData = async () => {
+  const fetchInitial = async () => {
     try {
-      const [branchesRes, partsRes] = await Promise.all([
-        fetch('/api/branches'),
-        fetch('/api/inventory'),
-      ]);
-
-      const branchesData = await branchesRes.json();
-      const partsData = await partsRes.json();
-
-      if (branchesData.success) setBranches(branchesData.data || []);
-      if (partsData.success) setParts(partsData.data || []);
-    } catch (error) {
-      console.error('Error fetching initial data:', error);
-    }
+      const [bR, pR] = await Promise.all([fetch('/api/branches'), fetch('/api/inventory')]);
+      const bD = await bR.json(), pD = await pR.json();
+      if (bD.success) setBranches(bD.data || []);
+      if (pD.success) setParts(pD.data || []);
+    } catch {}
   };
 
   const fetchTransfers = useCallback(async () => {
     try {
       setLoading(true);
-      const params = new URLSearchParams();
-      if (filters.status) params.append('status', filters.status);
-      if (filters.type) params.append('type', filters.type);
-
-      const response = await fetch(`/api/inventory-transfers?${params.toString()}`);
-      const data = await response.json();
-
-      if (data.success) {
-        setTransfers(data.data || []);
-        calculateStats(data.data || []);
-      } else {
-        toast.error(data.message || 'Failed to load transfers');
+      const p = new URLSearchParams();
+      if (filters.status) p.append('status', filters.status);
+      if (filters.type) p.append('type', filters.type);
+      const r = await fetch(`/api/inventory-transfers?${p}`);
+      const d = await r.json();
+      if (d.success) {
+        setTransfers(d.data || []);
+        const data = d.data || [];
+        setStats({
+          total: data.length,
+          pending: data.filter(t => ['REQUESTED', 'APPROVED'].includes(t.status)).length,
+          inTransit: data.filter(t => t.status === 'IN_TRANSIT').length,
+          completed: data.filter(t => t.status === 'RECEIVED').length,
+        });
       }
-    } catch (error) {
-      console.error('Error fetching transfers:', error);
-      toast.error('Failed to load transfers');
-    } finally {
-      setLoading(false);
-    }
+    } catch { toast.error('Failed to load'); }
+    finally { setLoading(false); }
   }, [filters]);
 
-  const calculateStats = (transfersData) => {
-    setStats({
-      total: transfersData.length,
-      pending: transfersData.filter(t => ['REQUESTED', 'APPROVED'].includes(t.status)).length,
-      inTransit: transfersData.filter(t => t.status === 'IN_TRANSIT').length,
-      completed: transfersData.filter(t => t.status === 'RECEIVED').length,
-    });
-  };
+  const resetForm = () => setFormData({
+    fromBranchId: '', toBranchId: currentUser?.branchId || '', notes: '', urgency: 'MEDIUM',
+    items: [{ partId: '', quantity: 1, notes: '' }],
+  });
 
-  const resetForm = () => {
-    setFormData({
-      fromBranchId: '',
-      toBranchId: currentUser?.branchId || '',
-      notes: '',
-      urgency: 'MEDIUM',
-      items: [{ partId: '', quantity: 1, notes: '' }],
-    });
-  };
+  const addItem = () => setFormData(p => ({ ...p, items: [...p.items, { partId: '', quantity: 1, notes: '' }] }));
+  const removeItem = i => { if (formData.items.length > 1) setFormData(p => ({ ...p, items: p.items.filter((_, idx) => idx !== i) })); };
+  const updateItem = (i, f, v) => setFormData(p => ({ ...p, items: p.items.map((item, idx) => idx === i ? { ...item, [f]: v } : item) }));
 
-  const addItem = () => {
-    setFormData(prev => ({
-      ...prev,
-      items: [...prev.items, { partId: '', quantity: 1, notes: '' }],
-    }));
-  };
+  const sourceParts = () => formData.fromBranchId ? parts.filter(p => p.branchId === formData.fromBranchId && p.quantity > 0) : [];
 
-  const removeItem = (index) => {
-    if (formData.items.length === 1) return;
-    setFormData(prev => ({
-      ...prev,
-      items: prev.items.filter((_, i) => i !== index),
-    }));
-  };
-
-  const updateItem = (index, field, value) => {
-    setFormData(prev => ({
-      ...prev,
-      items: prev.items.map((item, i) => 
-        i === index ? { ...item, [field]: value } : item
-      ),
-    }));
-  };
-
-  // Get parts from selected source branch
-  const getSourceBranchParts = () => {
-    if (!formData.fromBranchId) return [];
-    return parts.filter(p => p.branchId === formData.fromBranchId && p.quantity > 0);
-  };
-
-  const handleCreateTransfer = async (e) => {
+  const handleCreate = async (e) => {
     e.preventDefault();
-    
-    if (!formData.fromBranchId || !formData.toBranchId) {
-      toast.error('Please select both source and destination branches');
-      return;
-    }
-
-    const validItems = formData.items.filter(item => item.partId && item.quantity > 0);
-    if (validItems.length === 0) {
-      toast.error('Please add at least one item');
-      return;
-    }
-
+    if (!formData.fromBranchId || !formData.toBranchId) { toast.error('Select both branches'); return; }
+    const valid = formData.items.filter(i => i.partId && i.quantity > 0);
+    if (!valid.length) { toast.error('Add at least one item'); return; }
     setSubmitting(true);
-
     try {
-      const response = await fetch('/api/inventory-transfers', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          fromBranchId: formData.fromBranchId,
-          toBranchId: formData.toBranchId,
-          notes: formData.notes,
-          urgency: formData.urgency,
-          items: validItems,
-        }),
+      const r = await fetch('/api/inventory-transfers', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ fromBranchId: formData.fromBranchId, toBranchId: formData.toBranchId, notes: formData.notes, urgency: formData.urgency, items: valid }),
       });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        toast.error(data.message || 'Failed to create transfer request');
-        return;
-      }
-
-      toast.success('Transfer request created successfully');
-      setShowCreateModal(false);
-      resetForm();
-      fetchTransfers();
-    } catch (error) {
-      console.error('Error creating transfer:', error);
-      toast.error('An error occurred');
-    } finally {
-      setSubmitting(false);
-    }
+      const d = await r.json();
+      if (!r.ok) { toast.error(d.message || 'Failed'); return; }
+      toast.success('Transfer request created!');
+      setShowCreateModal(false); resetForm(); fetchTransfers();
+    } catch { toast.error('Error'); }
+    finally { setSubmitting(false); }
   };
 
-  const handleTransferAction = async (actionData) => {
+  const handleAction = async (actionData) => {
     if (!selectedTransfer) return;
     setSubmitting(true);
-
     try {
-      const response = await fetch(`/api/inventory-transfers/${selectedTransfer.id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action: actionType,
-          ...actionData
-        }),
+      const r = await fetch(`/api/inventory-transfers/${selectedTransfer.id}`, {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: actionType, ...actionData }),
       });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        toast.error(data.message || `Failed to ${actionType} transfer`);
-        return;
-      }
-
-      toast.success(data.message);
-      setShowActionModal(false);
-      setShowDetailModal(false);
-      setSelectedTransfer(null);
-      fetchTransfers();
-    } catch (error) {
-      console.error('Error processing transfer:', error);
-      toast.error('An error occurred');
-    } finally {
-      setSubmitting(false);
-    }
+      const d = await r.json();
+      if (!r.ok) { toast.error(d.message || 'Failed'); return; }
+      toast.success(d.message);
+      setShowActionModal(false); setShowDetailModal(false); setSelectedTransfer(null); fetchTransfers();
+    } catch { toast.error('Error'); }
+    finally { setSubmitting(false); }
   };
 
-  const openActionModal = (transfer, action) => {
-    setSelectedTransfer(transfer);
-    setActionType(action);
-    setShowActionModal(true);
-  };
+  const openAction = (t, a) => { setSelectedTransfer(t); setActionType(a); setShowActionModal(true); };
 
-  const getStatusConfig = (status) => {
-    const configs = {
-      REQUESTED: { label: 'Requested', color: '#f59e0b', bg: '#fef3c7', icon: '📤' },
-      APPROVED: { label: 'Approved', color: '#3b82f6', bg: '#dbeafe', icon: '✅' },
-      REJECTED: { label: 'Rejected', color: '#ef4444', bg: '#fee2e2', icon: '❌' },
-      IN_TRANSIT: { label: 'In Transit', color: '#8b5cf6', bg: '#ede9fe', icon: '🚚' },
-      RECEIVED: { label: 'Completed', color: '#10b981', bg: '#d1fae5', icon: '✓' },
-      CANCELLED: { label: 'Cancelled', color: '#6b7280', bg: '#f3f4f6', icon: '🚫' },
-    };
-    return configs[status] || configs.REQUESTED;
-  };
+  const isMgr = ['SUPER_ADMIN', 'MANAGER'].includes(currentUser?.role);
+  const isSA = currentUser?.role === 'SUPER_ADMIN';
+  const canApproveReject = t => t.status === 'REQUESTED' && (isSA || t.fromBranchId === currentUser?.branchId);
+  const canSend = t => t.status === 'APPROVED' && (isSA || t.fromBranchId === currentUser?.branchId);
+  const canReceive = t => t.status === 'IN_TRANSIT' && (isSA || t.toBranchId === currentUser?.branchId);
 
-  const getUrgencyConfig = (urgency) => {
-    const configs = {
-      LOW: { label: 'Low', color: '#6b7280', icon: '🔵' },
-      MEDIUM: { label: 'Medium', color: '#3b82f6', icon: '🟡' },
-      HIGH: { label: 'High', color: '#f97316', icon: '🟠' },
-      URGENT: { label: 'Urgent', color: '#ef4444', icon: '🔴' },
-    };
-    return configs[urgency] || configs.MEDIUM;
-  };
+  const incoming = transfers.filter(t => t.toBranchId === currentUser?.branchId);
+  const outgoing = transfers.filter(t => t.fromBranchId === currentUser?.branchId);
 
-  const isManager = ['SUPER_ADMIN', 'MANAGER'].includes(currentUser?.role);
-  const isSuperAdmin = currentUser?.role === 'SUPER_ADMIN';
-
-  // Check if user can perform actions on a transfer
-  const canApproveReject = (transfer) => {
-    return transfer.status === 'REQUESTED' && 
-           (isSuperAdmin || transfer.fromBranchId === currentUser?.branchId);
-  };
-
-  const canSend = (transfer) => {
-    return transfer.status === 'APPROVED' && 
-           (isSuperAdmin || transfer.fromBranchId === currentUser?.branchId);
-  };
-
-  const canReceive = (transfer) => {
-    return transfer.status === 'IN_TRANSIT' && 
-           (isSuperAdmin || transfer.toBranchId === currentUser?.branchId);
-  };
-
-  // Categorize transfers
-  const incomingTransfers = transfers.filter(t => t.toBranchId === currentUser?.branchId);
-  const outgoingTransfers = transfers.filter(t => t.fromBranchId === currentUser?.branchId);
+  const STATS = [
+    { label: 'Total Transfers', v: stats.total, icon: '🔄', grad: 'linear-gradient(135deg,#8b5cf6,#6d28d9)' },
+    { label: 'Pending', v: stats.pending, icon: '⏳', grad: 'linear-gradient(135deg,#f59e0b,#d97706)' },
+    { label: 'In Transit', v: stats.inTransit, icon: '🚚', grad: 'linear-gradient(135deg,#3b82f6,#1d4ed8)' },
+    { label: 'Completed', v: stats.completed, icon: '✓', grad: 'linear-gradient(135deg,#10b981,#059669)' },
+  ];
 
   return (
-    <div style={{ minHeight: '100vh', background: '#f9fafb' }}>
-      {/* Header */}
-      <div style={{
-        background: 'white',
-        borderBottom: '1px solid rgba(0,0,0,0.08)',
-        position: 'sticky',
-        top: 0,
-        zIndex: 10,
-        boxShadow: '0 1px 3px rgba(0,0,0,0.05)'
-      }}>
-        <div style={{
-          padding: isMobile ? '16px' : '16px 24px',
-          maxWidth: '1600px',
-          margin: '0 auto'
-        }}>
-          <div style={{
-            display: 'flex',
-            flexDirection: isMobile ? 'column' : 'row',
-            alignItems: isMobile ? 'flex-start' : 'center',
-            justifyContent: 'space-between',
-            gap: '16px'
-          }}>
+    <>
+      <style dangerouslySetInnerHTML={{ __html: CSS }} />
+
+      <div style={{ minHeight: '100vh' }}>
+        {/* HEADER */}
+        <div style={{ marginBottom: 24, animation: 'trSlideUp .5s ease' }}>
+          <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', flexWrap: 'wrap', gap: 14 }}>
             <div>
-              <h1 style={{
-                fontSize: isMobile ? '24px' : '32px',
-                fontWeight: '800',
-                color: '#1a202c',
-                margin: 0,
-                marginBottom: '4px'
-              }}>
-                🔄 Inventory Transfers
-              </h1>
-              <p style={{
-                color: '#6b7280',
-                fontSize: isMobile ? '14px' : '16px',
-                margin: 0
-              }}>
-                Transfer inventory items between branches
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4 }}>
+                <span style={{ fontSize: 26 }}>🔄</span>
+                <h1 style={{ margin: 0, fontSize: 'clamp(1.3rem,4vw,1.7rem)', fontWeight: 800, color: 'white', letterSpacing: '-.5px' }}>
+                  Inventory Transfers
+                </h1>
+              </div>
+              <p style={{ margin: 0, fontSize: 13, color: 'rgba(255,255,255,.4)', fontWeight: 500 }}>
+                Transfer items between branches
               </p>
             </div>
-
-            {isManager && (
-              <button
-                onClick={() => {
-                  resetForm();
-                  setShowCreateModal(true);
-                }}
-                style={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: '8px',
-                  background: 'linear-gradient(135deg, #8b5cf6 0%, #6d28d9 100%)',
-                  border: 'none',
-                  color: 'white',
-                  padding: '12px 24px',
-                  borderRadius: '12px',
-                  fontWeight: '600',
-                  fontSize: '15px',
-                  cursor: 'pointer',
-                  boxShadow: '0 4px 12px rgba(139, 92, 246, 0.3)',
-                  width: isMobile ? '100%' : 'auto',
-                  justifyContent: 'center'
-                }}
-              >
-                <svg style={{ width: '20px', height: '20px' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
-                </svg>
-                Request Transfer
-              </button>
+            {isMgr && (
+              <GBtn onClick={() => { resetForm(); setShowCreateModal(true); }} label="Request Transfer" icon="🔄"
+                grad="linear-gradient(135deg,#8b5cf6,#6d28d9)" glow="rgba(139,92,246,.35)" full={isMobile} />
             )}
           </div>
         </div>
-      </div>
 
-      <div style={{
-        padding: isMobile ? '16px' : '24px',
-        maxWidth: '1600px',
-        margin: '0 auto'
-      }}>
-        {/* Stats Cards */}
+        {/* STATS */}
         <div style={{
           display: 'grid',
-          gridTemplateColumns: isMobile ? 'repeat(2, 1fr)' : 'repeat(4, 1fr)',
-          gap: '16px',
-          marginBottom: '24px'
+          gridTemplateColumns: `repeat(auto-fit,minmax(min(100%,${isMobile ? '140px' : '200px'}),1fr))`,
+          gap: isMobile ? 10 : 14, marginBottom: 20,
         }}>
-          <StatCard title="Total Transfers" value={stats.total} icon="🔄" color="#8b5cf6" isMobile={isMobile} />
-          <StatCard title="Pending" value={stats.pending} icon="⏳" color="#f59e0b" isMobile={isMobile} />
-          <StatCard title="In Transit" value={stats.inTransit} icon="🚚" color="#3b82f6" isMobile={isMobile} />
-          <StatCard title="Completed" value={stats.completed} icon="✓" color="#10b981" isMobile={isMobile} />
+          {STATS.map((s, i) => (
+            <div key={s.label} className="tr-glass tr-stat" style={{
+              padding: isMobile ? 14 : 'clamp(14px,2vw,20px)',
+              animation: `trSlideUp .5s ease ${i * .08}s backwards`, cursor: 'default',
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                <div style={{ minWidth: 0 }}>
+                  <p style={{ margin: 0, fontSize: 9.5, fontWeight: 700, color: 'rgba(255,255,255,.38)', textTransform: 'uppercase', letterSpacing: '.7px' }}>{s.label}</p>
+                  <p style={{ margin: '5px 0 0', fontSize: isMobile ? '1.2rem' : 'clamp(1.2rem,2.5vw,1.6rem)', fontWeight: 800, color: 'white' }}>{s.v}</p>
+                </div>
+                <div className="tr-stat-icon" style={{
+                  width: isMobile ? 42 : 48, height: isMobile ? 42 : 48, borderRadius: 13,
+                  background: s.grad, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  fontSize: isMobile ? 20 : 22, flexShrink: 0, boxShadow: '0 6px 18px rgba(0,0,0,.25)',
+                  transition: 'transform .3s ease',
+                }}>{s.icon}</div>
+              </div>
+            </div>
+          ))}
         </div>
 
-        {/* Filters */}
-        <div style={{
-          background: 'white',
-          borderRadius: '16px',
-          padding: '16px',
-          marginBottom: '24px',
-          boxShadow: '0 1px 3px rgba(0,0,0,0.05)'
-        }}>
-          <div style={{
-            display: 'flex',
-            flexDirection: isMobile ? 'column' : 'row',
-            gap: '12px'
-          }}>
-            <select
-              name="type"
-              value={filters.type}
-              onChange={(e) => setFilters(prev => ({ ...prev, type: e.target.value }))}
-              style={{
-                padding: '12px 16px',
-                border: '2px solid #e5e7eb',
-                borderRadius: '12px',
-                fontSize: '15px',
-                background: 'white',
-                minWidth: '180px',
-                cursor: 'pointer'
-              }}
-            >
+        {/* ALERTS */}
+        {!isSA && incoming.filter(t => t.status === 'IN_TRANSIT').length > 0 && (
+          <AlertBanner icon="📦" title="Items Ready to Receive"
+            sub={`${incoming.filter(t => t.status === 'IN_TRANSIT').length} transfer(s) awaiting confirmation`}
+            color="#3b82f6" onClick={() => setFilters({ type: 'incoming', status: 'IN_TRANSIT' })} btnLabel="View" />
+        )}
+        {!isSA && outgoing.filter(t => t.status === 'REQUESTED').length > 0 && (
+          <AlertBanner icon="📤" title="Pending Approval"
+            sub={`${outgoing.filter(t => t.status === 'REQUESTED').length} request(s) need review`}
+            color="#f59e0b" onClick={() => setFilters({ type: 'outgoing', status: 'REQUESTED' })} btnLabel="Review" />
+        )}
+
+        {/* FILTERS */}
+        <div className="tr-glass" style={{ padding: isMobile ? 14 : 16, marginBottom: 20, animation: 'trSlideUp .5s ease .2s backwards' }}>
+          <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: 10 }}>
+            <select className="tr-select" value={filters.type}
+              onChange={e => setFilters(p => ({ ...p, type: e.target.value }))}
+              style={{ minWidth: isMobile ? '100%' : 170 }}>
               <option value="">All Transfers</option>
               <option value="incoming">📥 Incoming</option>
               <option value="outgoing">📤 Outgoing</option>
             </select>
-
-            <select
-              name="status"
-              value={filters.status}
-              onChange={(e) => setFilters(prev => ({ ...prev, status: e.target.value }))}
-              style={{
-                padding: '12px 16px',
-                border: '2px solid #e5e7eb',
-                borderRadius: '12px',
-                fontSize: '15px',
-                background: 'white',
-                minWidth: '180px',
-                cursor: 'pointer'
-              }}
-            >
+            <select className="tr-select" value={filters.status}
+              onChange={e => setFilters(p => ({ ...p, status: e.target.value }))}
+              style={{ minWidth: isMobile ? '100%' : 170 }}>
               <option value="">All Status</option>
               <option value="REQUESTED">📤 Requested</option>
               <option value="APPROVED">✅ Approved</option>
@@ -433,608 +280,402 @@ export default function InventoryTransfersPage() {
               <option value="RECEIVED">✓ Completed</option>
               <option value="REJECTED">❌ Rejected</option>
             </select>
-
             {(filters.status || filters.type) && (
-              <button
-                onClick={() => setFilters({ status: '', type: '' })}
-                style={{
-                  padding: '12px 16px',
-                  border: '2px solid #e5e7eb',
-                  borderRadius: '12px',
-                  background: 'white',
-                  color: '#6b7280',
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '8px'
-                }}
-              >
-                <svg style={{ width: '16px', height: '16px' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                </svg>
-                Clear Filters
-              </button>
+              <ClearBtn onClick={() => setFilters({ status: '', type: '' })} />
             )}
           </div>
         </div>
 
-        {/* Pending Actions Alert */}
-        {!isSuperAdmin && (
-          <>
-            {incomingTransfers.filter(t => t.status === 'IN_TRANSIT').length > 0 && (
-              <div style={{
-                background: 'linear-gradient(135deg, #dbeafe 0%, #bfdbfe 100%)',
-                border: '2px solid #3b82f6',
-                borderRadius: '16px',
-                padding: '16px 20px',
-                marginBottom: '16px',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                flexWrap: 'wrap',
-                gap: '12px'
-              }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                  <span style={{ fontSize: '28px' }}>📦</span>
-                  <div>
-                    <p style={{ fontWeight: '700', color: '#1e40af', margin: 0 }}>
-                      Items Ready to Receive
-                    </p>
-                    <p style={{ fontSize: '14px', color: '#3b82f6', margin: 0 }}>
-                      {incomingTransfers.filter(t => t.status === 'IN_TRANSIT').length} transfer(s) awaiting confirmation
-                    </p>
-                  </div>
-                </div>
-                <button
-                  onClick={() => setFilters({ type: 'incoming', status: 'IN_TRANSIT' })}
-                  style={{
-                    padding: '10px 20px',
-                    background: '#3b82f6',
-                    color: 'white',
-                    border: 'none',
-                    borderRadius: '10px',
-                    fontWeight: '600',
-                    cursor: 'pointer'
-                  }}
-                >
-                  View Items
-                </button>
-              </div>
-            )}
-
-            {outgoingTransfers.filter(t => t.status === 'REQUESTED').length > 0 && (
-              <div style={{
-                background: 'linear-gradient(135deg, #fef3c7 0%, #fde68a 100%)',
-                border: '2px solid #f59e0b',
-                borderRadius: '16px',
-                padding: '16px 20px',
-                marginBottom: '16px',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                flexWrap: 'wrap',
-                gap: '12px'
-              }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                  <span style={{ fontSize: '28px' }}>📤</span>
-                  <div>
-                    <p style={{ fontWeight: '700', color: '#92400e', margin: 0 }}>
-                      Pending Approval
-                    </p>
-                    <p style={{ fontSize: '14px', color: '#b45309', margin: 0 }}>
-                      {outgoingTransfers.filter(t => t.status === 'REQUESTED').length} transfer request(s) need your review
-                    </p>
-                  </div>
-                </div>
-                <button
-                  onClick={() => setFilters({ type: 'outgoing', status: 'REQUESTED' })}
-                  style={{
-                    padding: '10px 20px',
-                    background: '#f59e0b',
-                    color: 'white',
-                    border: 'none',
-                    borderRadius: '10px',
-                    fontWeight: '600',
-                    cursor: 'pointer'
-                  }}
-                >
-                  Review Requests
-                </button>
-              </div>
-            )}
-          </>
-        )}
-
-        {/* Transfers List */}
-        {loading ? (
-          <LoadingState isMobile={isMobile} />
-        ) : transfers.length === 0 ? (
-          <EmptyState 
-            hasFilter={!!filters.status || !!filters.type}
-            onCreateClick={() => {
-              resetForm();
-              setShowCreateModal(true);
-            }}
-            isManager={isManager}
-            isMobile={isMobile}
-          />
+        {/* CONTENT */}
+        {loading ? <Loader text="Loading transfers..." /> : transfers.length === 0 ? (
+          <Empty icon="🔄" title="No transfers found"
+            sub={filters.status || filters.type ? 'Try different filters' : 'Request inventory from another branch'}
+            showBtn={isMgr && !filters.status && !filters.type}
+            onBtn={() => { resetForm(); setShowCreateModal(true); }}
+            btnLabel="Request Transfer" />
         ) : (
-          <div style={{
-            display: 'flex',
-            flexDirection: 'column',
-            gap: '16px'
-          }}>
-            {transfers.map(transfer => (
-              <TransferCard
-                key={transfer.id}
-                transfer={transfer}
-                currentUser={currentUser}
-                getStatusConfig={getStatusConfig}
-                getUrgencyConfig={getUrgencyConfig}
-                canApproveReject={canApproveReject(transfer)}
-                canSend={canSend(transfer)}
-                canReceive={canReceive(transfer)}
-                onView={() => {
-                  setSelectedTransfer(transfer);
-                  setShowDetailModal(true);
-                }}
-                onApprove={() => openActionModal(transfer, 'approve')}
-                onReject={() => openActionModal(transfer, 'reject')}
-                onSend={() => openActionModal(transfer, 'send')}
-                onReceive={() => openActionModal(transfer, 'receive')}
-                isMobile={isMobile}
-              />
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            {transfers.map((t, i) => (
+              <TransferCard key={t.id} transfer={t} index={i} currentUser={currentUser} isMobile={isMobile}
+                canAR={canApproveReject(t)} canS={canSend(t)} canR={canReceive(t)}
+                onView={() => { setSelectedTransfer(t); setShowDetailModal(true); }}
+                onApprove={() => openAction(t, 'approve')}
+                onReject={() => openAction(t, 'reject')}
+                onSend={() => openAction(t, 'send')}
+                onReceive={() => openAction(t, 'receive')} />
             ))}
           </div>
         )}
       </div>
 
-      {/* Create Transfer Modal */}
+      {/* CREATE MODAL */}
       {showCreateModal && (
-        <CreateTransferModal
-          isMobile={isMobile}
-          formData={formData}
-          setFormData={setFormData}
-          branches={branches}
-          parts={getSourceBranchParts()}
-          allParts={parts}
-          currentUser={currentUser}
-          onSubmit={handleCreateTransfer}
-          onClose={() => {
-            setShowCreateModal(false);
-            resetForm();
-          }}
-          addItem={addItem}
-          removeItem={removeItem}
-          updateItem={updateItem}
-          submitting={submitting}
-        />
+        <Overlay onClose={() => { setShowCreateModal(false); resetForm(); }}>
+          <div style={{ maxWidth: 620, width: '100%' }}>
+            <MHead grad="linear-gradient(135deg,#8b5cf6,#6d28d9)" title="🔄 Request Transfer"
+              sub="Request items from another branch" onClose={() => { setShowCreateModal(false); resetForm(); }} />
+            <form onSubmit={handleCreate} style={{ padding: isMobile ? 20 : 24, background: 'rgba(15,23,42,.97)', borderRadius: '0 0 20px 20px', border: '1px solid rgba(255,255,255,.06)', borderTop: 'none' }}>
+              <div style={{ maxHeight: 'calc(72vh - 200px)', overflowY: 'auto', paddingRight: 4 }}>
+                {/* Branches */}
+                <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr auto 1fr', gap: 14, alignItems: 'end', marginBottom: 18 }}>
+                  <div>
+                    <label className="tr-label">From Branch <span style={{ color: '#8b5cf6' }}>*</span></label>
+                    <select className="tr-select" value={formData.fromBranchId}
+                      onChange={e => setFormData(p => ({ ...p, fromBranchId: e.target.value, items: [{ partId: '', quantity: 1, notes: '' }] }))} required>
+                      <option value="">Select source...</option>
+                      {(isSA ? branches : branches.filter(b => b.id !== currentUser?.branchId)).map(b => (
+                        <option key={b.id} value={b.id}>{b.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                  {!isMobile && (
+                    <div style={{ paddingBottom: 8, display: 'flex', justifyContent: 'center' }}>
+                      <span style={{ fontSize: 22, color: '#8b5cf6' }}>→</span>
+                    </div>
+                  )}
+                  <div>
+                    <label className="tr-label">To Branch <span style={{ color: '#8b5cf6' }}>*</span></label>
+                    {isSA ? (
+                      <select className="tr-select" value={formData.toBranchId}
+                        onChange={e => setFormData(p => ({ ...p, toBranchId: e.target.value }))} required>
+                        <option value="">Select destination...</option>
+                        {branches.filter(b => b.id !== formData.fromBranchId).map(b => (
+                          <option key={b.id} value={b.id}>{b.name}</option>
+                        ))}
+                      </select>
+                    ) : (
+                      <div style={{ padding: '11px 14px', borderRadius: 12, background: 'rgba(255,255,255,.03)', border: '1px solid rgba(255,255,255,.07)', color: 'white', fontWeight: 600, fontSize: 14 }}>
+                        {branches.find(b => b.id === currentUser?.branchId)?.name || 'Your Branch'}
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Urgency */}
+                <div style={{ marginBottom: 18 }}>
+                  <label className="tr-label">Urgency</label>
+                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                    {[
+                      { v: 'LOW', l: '🔵 Low', c: '#3b82f6' },
+                      { v: 'MEDIUM', l: '🟡 Medium', c: '#f59e0b' },
+                      { v: 'HIGH', l: '🟠 High', c: '#f97316' },
+                      { v: 'URGENT', l: '🔴 Urgent', c: '#ef4444' },
+                    ].map(o => (
+                      <label key={o.v} style={{
+                        display: 'flex', alignItems: 'center', padding: '9px 14px', borderRadius: 10, cursor: 'pointer',
+                        background: formData.urgency === o.v ? `${o.c}15` : 'rgba(255,255,255,.03)',
+                        border: `1.5px solid ${formData.urgency === o.v ? `${o.c}40` : 'rgba(255,255,255,.07)'}`,
+                        transition: 'all .2s',
+                      }}>
+                        <input type="radio" value={o.v} checked={formData.urgency === o.v}
+                          onChange={e => setFormData(p => ({ ...p, urgency: e.target.value }))} style={{ display: 'none' }} />
+                        <span style={{ fontWeight: 700, fontSize: 13, color: formData.urgency === o.v ? o.c : 'rgba(255,255,255,.45)' }}>{o.l}</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Items */}
+                <div style={{ marginBottom: 18 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+                    <label className="tr-label" style={{ margin: 0 }}>Items <span style={{ color: '#8b5cf6' }}>*</span></label>
+                    <button type="button" onClick={addItem} disabled={!formData.fromBranchId} className="tr-btn" style={{
+                      padding: '6px 12px', borderRadius: 8, background: formData.fromBranchId ? 'rgba(139,92,246,.12)' : 'rgba(255,255,255,.04)',
+                      border: `1px solid ${formData.fromBranchId ? 'rgba(139,92,246,.25)' : 'rgba(255,255,255,.06)'}`,
+                      color: formData.fromBranchId ? '#c4b5fd' : 'rgba(255,255,255,.3)',
+                      fontSize: 12, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 4,
+                    }}>+ Add Item</button>
+                  </div>
+
+                  {!formData.fromBranchId ? (
+                    <div style={{ padding: 24, borderRadius: 12, background: 'rgba(255,255,255,.02)', border: '1px solid rgba(255,255,255,.05)', textAlign: 'center', color: 'rgba(255,255,255,.35)', fontSize: 13 }}>
+                      Select a source branch to see items
+                    </div>
+                  ) : sourceParts().length === 0 ? (
+                    <div style={{ padding: 24, borderRadius: 12, background: 'rgba(245,158,11,.06)', border: '1px solid rgba(245,158,11,.15)', textAlign: 'center', color: '#fcd34d', fontSize: 13 }}>
+                      No items with stock in selected branch
+                    </div>
+                  ) : (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                      {formData.items.map((item, idx) => (
+                        <div key={idx} style={{ padding: 14, borderRadius: 14, background: 'rgba(255,255,255,.025)', border: '1px solid rgba(255,255,255,.06)' }}>
+                          <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '2fr 1fr auto', gap: 10, alignItems: 'end' }}>
+                            <div>
+                              <label style={{ fontSize: 10, color: 'rgba(255,255,255,.35)', fontWeight: 600, display: 'block', marginBottom: 4 }}>Part</label>
+                              <select className="tr-select" value={item.partId} onChange={e => updateItem(idx, 'partId', e.target.value)} required>
+                                <option value="">Select...</option>
+                                {sourceParts().map(p => (
+                                  <option key={p.id} value={p.id}>{p.name} ({p.partNumber}) - Avail: {p.quantity}</option>
+                                ))}
+                              </select>
+                            </div>
+                            <div>
+                              <label style={{ fontSize: 10, color: 'rgba(255,255,255,.35)', fontWeight: 600, display: 'block', marginBottom: 4 }}>Qty</label>
+                              <input className="tr-input" type="number" value={item.quantity}
+                                onChange={e => updateItem(idx, 'quantity', parseInt(e.target.value) || 1)} min="1" required />
+                            </div>
+                            {formData.items.length > 1 && (
+                              <button type="button" onClick={() => removeItem(idx)} className="tr-btn" style={{
+                                width: 38, height: 38, borderRadius: 10, background: 'rgba(239,68,68,.1)',
+                                border: '1px solid rgba(239,68,68,.2)', color: '#fca5a5',
+                                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                              }}>✕</button>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                <div>
+                  <label className="tr-label">Notes</label>
+                  <textarea className="tr-input" value={formData.notes}
+                    onChange={e => setFormData(p => ({ ...p, notes: e.target.value }))}
+                    rows={2} placeholder="Additional notes..." style={{ resize: 'none' }} />
+                </div>
+              </div>
+
+              <MFoot onCancel={() => { setShowCreateModal(false); resetForm(); }} submitting={submitting}
+                label="Submit Request" grad="linear-gradient(135deg,#8b5cf6,#6d28d9)" glow="rgba(139,92,246,.3)"
+                disabled={!formData.fromBranchId} />
+            </form>
+          </div>
+        </Overlay>
       )}
 
-      {/* Detail Modal */}
+      {/* DETAIL MODAL */}
       {showDetailModal && selectedTransfer && (
-        <TransferDetailModal
-          isMobile={isMobile}
-          transfer={selectedTransfer}
-          currentUser={currentUser}
-          getStatusConfig={getStatusConfig}
-          getUrgencyConfig={getUrgencyConfig}
-          canApproveReject={canApproveReject(selectedTransfer)}
-          canSend={canSend(selectedTransfer)}
-          canReceive={canReceive(selectedTransfer)}
-          onClose={() => {
-            setShowDetailModal(false);
-            setSelectedTransfer(null);
-          }}
-          onApprove={() => openActionModal(selectedTransfer, 'approve')}
-          onReject={() => openActionModal(selectedTransfer, 'reject')}
-          onSend={() => openActionModal(selectedTransfer, 'send')}
-          onReceive={() => openActionModal(selectedTransfer, 'receive')}
-        />
-      )}
-
-      {/* Action Modal */}
-      {showActionModal && selectedTransfer && (
-        <TransferActionModal
-          isMobile={isMobile}
-          transfer={selectedTransfer}
-          actionType={actionType}
-          onClose={() => {
-            setShowActionModal(false);
-            setActionType('');
-          }}
-          onSubmit={handleTransferAction}
-          submitting={submitting}
-        />
-      )}
-
-      <style jsx global>{`
-        @keyframes spin {
-          from { transform: rotate(0deg); }
-          to { transform: rotate(360deg); }
-        }
-        @keyframes slideUp {
-          from { opacity: 0; transform: translateY(20px); }
-          to { opacity: 1; transform: translateY(0); }
-        }
-      `}</style>
-    </div>
-  );
-}
-
-// Helper Components for Transfers Page
-
-function StatCard({ title, value, icon, color, isMobile }) {
-  return (
-    <div style={{
-      background: 'white',
-      borderRadius: '16px',
-      padding: isMobile ? '16px' : '20px',
-      boxShadow: '0 1px 3px rgba(0,0,0,0.05)',
-      border: '1px solid rgba(0,0,0,0.05)'
-    }}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-        <div>
-          <p style={{ fontSize: '12px', color: '#6b7280', fontWeight: '600', margin: 0, marginBottom: '4px', textTransform: 'uppercase' }}>
-            {title}
-          </p>
-          <p style={{ fontSize: isMobile ? '24px' : '28px', fontWeight: '800', color: '#1a202c', margin: 0 }}>
-            {value}
-          </p>
-        </div>
-        <div style={{
-          width: isMobile ? '44px' : '52px',
-          height: isMobile ? '44px' : '52px',
-          background: `${color}15`,
-          borderRadius: '14px',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          fontSize: isMobile ? '22px' : '26px'
-        }}>
-          {icon}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function LoadingState({ isMobile }) {
-  return (
-    <div style={{
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-      padding: '80px 20px',
-      background: 'white',
-      borderRadius: '20px'
-    }}>
-      <div style={{ textAlign: 'center' }}>
-        <div style={{
-          width: '56px',
-          height: '56px',
-          border: '4px solid #e5e7eb',
-          borderTopColor: '#8b5cf6',
-          borderRadius: '50%',
-          animation: 'spin 1s linear infinite',
-          margin: '0 auto 16px'
-        }} />
-        <p style={{ color: '#6b7280', fontSize: '16px', fontWeight: '500', margin: 0 }}>
-          Loading transfers...
-        </p>
-      </div>
-    </div>
-  );
-}
-
-function EmptyState({ hasFilter, onCreateClick, isManager, isMobile }) {
-  return (
-    <div style={{
-      background: 'white',
-      borderRadius: '20px',
-      padding: isMobile ? '40px 20px' : '60px 40px',
-      textAlign: 'center',
-      boxShadow: '0 1px 3px rgba(0,0,0,0.05)'
-    }}>
-      <div style={{
-        width: '80px',
-        height: '80px',
-        background: '#f3f4f6',
-        borderRadius: '20px',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        margin: '0 auto 24px',
-        fontSize: '40px'
-      }}>
-        🔄
-      </div>
-      <h3 style={{ fontSize: '20px', fontWeight: '700', color: '#1a202c', margin: 0, marginBottom: '8px' }}>
-        No transfers found
-      </h3>
-      <p style={{ fontSize: '16px', color: '#6b7280', margin: 0, marginBottom: '24px' }}>
-        {hasFilter 
-          ? 'Try adjusting your filters to see transfers.'
-          : 'Request inventory from another branch to get started.'
-        }
-      </p>
-      {isManager && !hasFilter && (
-        <button
-          onClick={onCreateClick}
-          style={{
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: '8px',
-            background: 'linear-gradient(135deg, #8b5cf6 0%, #6d28d9 100%)',
-            color: 'white',
-            padding: '14px 28px',
-            borderRadius: '12px',
-            border: 'none',
-            fontWeight: '600',
-            fontSize: '16px',
-            cursor: 'pointer'
-          }}
-        >
-          <svg style={{ width: '20px', height: '20px' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
-          </svg>
-          Request Transfer
-        </button>
-      )}
-    </div>
-  );
-}
-
-function TransferCard({ 
-  transfer, 
-  currentUser,
-  getStatusConfig, 
-  getUrgencyConfig, 
-  canApproveReject,
-  canSend,
-  canReceive,
-  onView, 
-  onApprove,
-  onReject,
-  onSend,
-  onReceive,
-  isMobile 
-}) {
-  const statusConfig = getStatusConfig(transfer.status);
-  const urgencyConfig = getUrgencyConfig(transfer.urgency);
-  const itemCount = transfer.items?.length || 0;
-  const isIncoming = transfer.toBranchId === currentUser?.branchId;
-  const isOutgoing = transfer.fromBranchId === currentUser?.branchId;
-
-  return (
-    <div 
-      style={{
-        background: 'white',
-        borderRadius: '16px',
-        boxShadow: '0 1px 3px rgba(0,0,0,0.05)',
-        border: '1px solid rgba(0,0,0,0.05)',
-        overflow: 'hidden',
-        transition: 'all 0.2s',
-        cursor: 'pointer'
-      }}
-      onClick={onView}
-      onMouseEnter={(e) => {
-        e.currentTarget.style.transform = 'translateY(-2px)';
-        e.currentTarget.style.boxShadow = '0 8px 24px rgba(0,0,0,0.1)';
-      }}
-      onMouseLeave={(e) => {
-        e.currentTarget.style.transform = 'translateY(0)';
-        e.currentTarget.style.boxShadow = '0 1px 3px rgba(0,0,0,0.05)';
-      }}
-    >
-      {/* Direction indicator */}
-      <div style={{
-        height: '4px',
-        background: isIncoming 
-          ? 'linear-gradient(90deg, #10b981, #34d399)' 
-          : 'linear-gradient(90deg, #f59e0b, #fbbf24)'
-      }} />
-
-      <div style={{ padding: '20px' }}>
-        <div style={{
-          display: 'flex',
-          flexDirection: isMobile ? 'column' : 'row',
-          justifyContent: 'space-between',
-          gap: '16px'
-        }}>
-          {/* Left Section */}
-          <div style={{ flex: 1 }}>
-            <div style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '12px',
-              flexWrap: 'wrap',
-              marginBottom: '12px'
-            }}>
-              <span style={{
-                fontFamily: 'monospace',
-                fontWeight: '700',
-                fontSize: '16px',
-                color: '#1a202c'
-              }}>
-                {transfer.transferNumber}
-              </span>
-              <span style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: '4px',
-                padding: '4px 10px',
-                borderRadius: '20px',
-                fontSize: '12px',
-                fontWeight: '600',
-                background: statusConfig.bg,
-                color: statusConfig.color
-              }}>
-                {statusConfig.icon} {statusConfig.label}
-              </span>
-              <span style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: '4px',
-                padding: '4px 10px',
-                borderRadius: '20px',
-                fontSize: '12px',
-                fontWeight: '600',
-                background: isIncoming ? '#d1fae5' : '#fef3c7',
-                color: isIncoming ? '#059669' : '#d97706'
-              }}>
-                {isIncoming ? '📥 Incoming' : '📤 Outgoing'}
-              </span>
+        <Overlay onClose={() => { setShowDetailModal(false); setSelectedTransfer(null); }}>
+          <div style={{ maxWidth: 580, width: '100%' }}>
+            <div style={{ padding: '20px 22px', background: 'rgba(255,255,255,.04)', borderRadius: '20px 20px 0 0', border: '1px solid rgba(255,255,255,.08)', borderBottom: 'none' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                <div>
+                  <p style={{ margin: '0 0 4px', fontSize: 11, color: 'rgba(255,255,255,.35)', fontWeight: 600 }}>Transfer</p>
+                  <h2 style={{ margin: '0 0 10px', fontSize: 20, fontWeight: 800, color: 'white' }}>{selectedTransfer.transferNumber}</h2>
+                  <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                    <Badge {...gSC(selectedTransfer.status)} />
+                    <Badge text={selectedTransfer.toBranchId === currentUser?.branchId ? '📥 Incoming' : '📤 Outgoing'}
+                      bg={selectedTransfer.toBranchId === currentUser?.branchId ? 'rgba(16,185,129,.12)' : 'rgba(245,158,11,.12)'}
+                      bd={selectedTransfer.toBranchId === currentUser?.branchId ? 'rgba(16,185,129,.25)' : 'rgba(245,158,11,.25)'}
+                      c={selectedTransfer.toBranchId === currentUser?.branchId ? '#6ee7b7' : '#fcd34d'} />
+                  </div>
+                </div>
+                <CloseBtn onClick={() => { setShowDetailModal(false); setSelectedTransfer(null); }} />
+              </div>
             </div>
 
-            {/* Branches */}
-            <div style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '8px',
-              marginBottom: '8px',
-              flexWrap: 'wrap'
-            }}>
-              <span style={{
-                padding: '4px 12px',
-                background: '#f3f4f6',
-                borderRadius: '8px',
-                fontSize: '13px',
-                fontWeight: '500'
-              }}>
-                {transfer.fromBranch?.name}
-              </span>
-              <svg style={{ width: '20px', height: '20px', color: '#9ca3af' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 8l4 4m0 0l-4 4m4-4H3" />
-              </svg>
-              <span style={{
-                padding: '4px 12px',
-                background: '#f3f4f6',
-                borderRadius: '8px',
-                fontSize: '13px',
-                fontWeight: '500'
-              }}>
-                {transfer.toBranch?.name}
-              </span>
-            </div>
+            <div style={{ padding: isMobile ? 20 : 24, background: 'rgba(15,23,42,.97)', borderRadius: '0 0 20px 20px', border: '1px solid rgba(255,255,255,.06)', borderTop: 'none', maxHeight: 'calc(72vh - 180px)', overflowY: 'auto' }}>
+              {/* Route */}
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 14, padding: 18, borderRadius: 14, background: 'rgba(255,255,255,.03)', border: '1px solid rgba(255,255,255,.06)', marginBottom: 20 }}>
+                <div style={{ textAlign: 'center', flex: 1 }}>
+                  <p style={{ margin: '0 0 3px', fontSize: 10, color: 'rgba(255,255,255,.35)', fontWeight: 600 }}>FROM</p>
+                  <p style={{ margin: 0, fontWeight: 700, color: 'white', fontSize: 14 }}>{selectedTransfer.fromBranch?.name}</p>
+                </div>
+                <div style={{ width: 40, height: 40, borderRadius: '50%', background: 'linear-gradient(135deg,#8b5cf6,#6d28d9)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                  <span style={{ color: 'white', fontSize: 16 }}>→</span>
+                </div>
+                <div style={{ textAlign: 'center', flex: 1 }}>
+                  <p style={{ margin: '0 0 3px', fontSize: 10, color: 'rgba(255,255,255,.35)', fontWeight: 600 }}>TO</p>
+                  <p style={{ margin: 0, fontWeight: 700, color: 'white', fontSize: 14 }}>{selectedTransfer.toBranch?.name}</p>
+                </div>
+              </div>
 
-            <div style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '16px',
-              fontSize: '14px'
-            }}>
-              <span style={{ color: '#6b7280' }}>
-                <strong style={{ color: '#1a202c' }}>{itemCount}</strong> item(s)
-              </span>
-              <span style={{ color: '#9ca3af' }}>•</span>
-              <span style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '4px',
-                color: urgencyConfig.color
-              }}>
-                {urgencyConfig.icon} {urgencyConfig.label}
-              </span>
+              {/* Meta */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14, marginBottom: 20 }}>
+                {[
+                  { l: 'Requested By', v: selectedTransfer.requestedBy?.name },
+                  { l: 'Urgency', v: `${gUC(selectedTransfer.urgency).icon} ${gUC(selectedTransfer.urgency).label}` },
+                  { l: 'Created', v: new Date(selectedTransfer.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) },
+                  ...(selectedTransfer.approvedBy ? [{ l: 'Approved By', v: selectedTransfer.approvedBy?.name }] : []),
+                ].map(m => (
+                  <div key={m.l}>
+                    <p style={{ margin: '0 0 3px', fontSize: 10, color: 'rgba(255,255,255,.35)', fontWeight: 600 }}>{m.l}</p>
+                    <p style={{ margin: 0, fontSize: 13, fontWeight: 700, color: 'white' }}>{m.v}</p>
+                  </div>
+                ))}
+              </div>
+
+              {/* Items */}
+              <p style={{ margin: '0 0 10px', fontSize: 10, color: 'rgba(255,255,255,.35)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.5px' }}>Transfer Items</p>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 18 }}>
+                {selectedTransfer.items?.map((item, i) => (
+                  <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '11px 14px', borderRadius: 11, background: 'rgba(255,255,255,.03)', border: '1px solid rgba(255,255,255,.05)' }}>
+                    <div>
+                      <p style={{ margin: 0, fontWeight: 700, color: 'white', fontSize: 13 }}>{item.part?.name}</p>
+                      <p style={{ margin: '1px 0 0', fontSize: 11, color: 'rgba(255,255,255,.35)', fontFamily: 'monospace' }}>{item.part?.partNumber}</p>
+                    </div>
+                    <div style={{ textAlign: 'right' }}>
+                      <p style={{ margin: 0, fontWeight: 800, color: 'white', fontSize: 16 }}>{item.quantityRequested}</p>
+                      {item.quantitySent != null && <p style={{ margin: 0, fontSize: 10, color: 'rgba(255,255,255,.4)' }}>Sent: {item.quantitySent}</p>}
+                      {item.quantityReceived != null && <p style={{ margin: 0, fontSize: 10, color: '#6ee7b7' }}>Received: {item.quantityReceived}</p>}
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {selectedTransfer.notes && (
+                <div style={{ marginBottom: 16 }}>
+                  <p style={{ margin: '0 0 4px', fontSize: 10, color: 'rgba(255,255,255,.35)', fontWeight: 600 }}>Notes</p>
+                  <p style={{ margin: 0, fontSize: 13, color: 'rgba(255,255,255,.6)' }}>{selectedTransfer.notes}</p>
+                </div>
+              )}
+
+              {selectedTransfer.status === 'REJECTED' && selectedTransfer.rejectionReason && (
+                <div style={{ padding: 14, borderRadius: 12, background: 'rgba(239,68,68,.08)', border: '1px solid rgba(239,68,68,.2)' }}>
+                  <p style={{ margin: '0 0 4px', fontSize: 10, color: '#fca5a5', fontWeight: 700 }}>Rejection Reason</p>
+                  <p style={{ margin: 0, fontSize: 13, color: '#fca5a5' }}>{selectedTransfer.rejectionReason}</p>
+                </div>
+              )}
+
+              {/* Actions */}
+              <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 20, paddingTop: 16, borderTop: '1px solid rgba(255,255,255,.06)', flexWrap: 'wrap' }}>
+                <GBtn onClick={() => { setShowDetailModal(false); setSelectedTransfer(null); }} label="Close" outline color="rgba(255,255,255,.4)" />
+                {canApproveReject(selectedTransfer) && (
+                  <>
+                    <GBtn onClick={() => openAction(selectedTransfer, 'reject')} label="Reject" outline color="#fca5a5" borderColor="rgba(239,68,68,.3)" />
+                    <GBtn onClick={() => openAction(selectedTransfer, 'approve')} label="Approve" grad="linear-gradient(135deg,#10b981,#059669)" glow="rgba(16,185,129,.3)" />
+                  </>
+                )}
+                {canSend(selectedTransfer) && (
+                  <GBtn onClick={() => openAction(selectedTransfer, 'send')} label="🚚 Send" grad="linear-gradient(135deg,#8b5cf6,#6d28d9)" glow="rgba(139,92,246,.3)" />
+                )}
+                {canReceive(selectedTransfer) && (
+                  <GBtn onClick={() => openAction(selectedTransfer, 'receive')} label="✓ Receive" grad="linear-gradient(135deg,#10b981,#059669)" glow="rgba(16,185,129,.3)" />
+                )}
+              </div>
             </div>
           </div>
+        </Overlay>
+      )}
 
-          {/* Right Section - Actions */}
-          <div style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: '8px',
-            flexShrink: 0,
-            flexWrap: 'wrap'
-          }}>
-            {canApproveReject && (
+      {/* ACTION MODAL */}
+      {showActionModal && selectedTransfer && (
+        <ActionModal transfer={selectedTransfer} actionType={actionType} isMobile={isMobile}
+          onClose={() => { setShowActionModal(false); setActionType(''); }}
+          onSubmit={handleAction} submitting={submitting} />
+      )}
+    </>
+  );
+}
+
+// ─── ACTION MODAL ───
+function ActionModal({ transfer, actionType, isMobile, onClose, onSubmit, submitting }) {
+  const [items, setItems] = useState(
+    transfer.items?.map(i => ({
+      id: i.id, partName: i.part?.name, quantityRequested: i.quantityRequested,
+      quantitySent: i.quantitySent || i.quantityRequested,
+      quantityReceived: i.quantityReceived || i.quantitySent || i.quantityRequested,
+    })) || []
+  );
+  const [reason, setReason] = useState('');
+
+  const handleQty = (id, field, v) => setItems(p => p.map(i => i.id === id ? { ...i, [field]: parseInt(v) || 0 } : i));
+
+  const submit = () => {
+    if (actionType === 'reject') onSubmit({ rejectionReason: reason });
+    else if (actionType === 'receive') onSubmit({ items: items.map(i => ({ id: i.id, quantityReceived: i.quantityReceived })) });
+    else onSubmit({ items: items.map(i => ({ id: i.id, quantitySent: i.quantitySent })) });
+  };
+
+  const cfg = {
+    approve: { title: '✅ Approve', sub: 'Set quantities', btn: 'Approve', grad: 'linear-gradient(135deg,#10b981,#059669)', glow: 'rgba(16,185,129,.3)' },
+    reject: { title: '❌ Reject', sub: 'Provide reason', btn: 'Reject', grad: 'linear-gradient(135deg,#ef4444,#dc2626)', glow: 'rgba(239,68,68,.3)' },
+    send: { title: '🚚 Send Items', sub: 'Confirm dispatch', btn: 'Confirm Send', grad: 'linear-gradient(135deg,#8b5cf6,#6d28d9)', glow: 'rgba(139,92,246,.3)' },
+    receive: { title: '📦 Receive', sub: 'Confirm receipt', btn: 'Confirm Receipt', grad: 'linear-gradient(135deg,#10b981,#059669)', glow: 'rgba(16,185,129,.3)' },
+  }[actionType];
+
+  return (
+    <Overlay onClose={onClose} z={110}>
+      <div style={{ maxWidth: 520, width: '100%' }}>
+        <MHead grad={cfg.grad} title={cfg.title} sub={cfg.sub} onClose={onClose} />
+        <div style={{ padding: isMobile ? 20 : 24, background: 'rgba(15,23,42,.97)', borderRadius: '0 0 20px 20px', border: '1px solid rgba(255,255,255,.06)', borderTop: 'none', maxHeight: 'calc(72vh - 200px)', overflowY: 'auto' }}>
+          {actionType === 'reject' ? (
+            <div>
+              <label className="tr-label">Rejection Reason</label>
+              <textarea className="tr-input" value={reason} onChange={e => setReason(e.target.value)}
+                rows={4} placeholder="Explain why..." style={{ resize: 'none' }} />
+            </div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              {items.map(item => (
+                <div key={item.id} style={{ padding: 14, borderRadius: 14, background: 'rgba(255,255,255,.025)', border: '1px solid rgba(255,255,255,.06)' }}>
+                  <p style={{ margin: '0 0 3px', fontWeight: 700, color: 'white', fontSize: 14 }}>{item.partName}</p>
+                  <p style={{ margin: '0 0 10px', fontSize: 12, color: 'rgba(255,255,255,.4)' }}>Requested: {item.quantityRequested}</p>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                    <span style={{ fontSize: 13, color: 'rgba(255,255,255,.5)', fontWeight: 600 }}>
+                      {actionType === 'receive' ? 'Received:' : 'Quantity:'}
+                    </span>
+                    <input className="tr-input" type="number"
+                      value={actionType === 'receive' ? item.quantityReceived : item.quantitySent}
+                      onChange={e => handleQty(item.id, actionType === 'receive' ? 'quantityReceived' : 'quantitySent', e.target.value)}
+                      min="0" max={item.quantityRequested}
+                      style={{ width: 90, textAlign: 'center', fontSize: 16, fontWeight: 700 }} />
+                    <span style={{ fontSize: 12, color: 'rgba(255,255,255,.35)' }}>/ {item.quantityRequested}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 22, paddingTop: 18, borderTop: '1px solid rgba(255,255,255,.06)' }}>
+            <GBtn onClick={onClose} label="Cancel" outline color="rgba(255,255,255,.4)" disabled={submitting} />
+            <button onClick={submit} disabled={submitting} className="tr-btn" style={{
+              padding: '10px 22px', borderRadius: 12, background: cfg.grad, border: 'none',
+              color: 'white', fontSize: 13, fontWeight: 700, opacity: submitting ? .6 : 1,
+              display: 'flex', alignItems: 'center', gap: 8, boxShadow: `0 4px 14px ${cfg.glow}`,
+            }}>
+              {submitting && <Spin />}
+              {cfg.btn}
+            </button>
+          </div>
+        </div>
+      </div>
+    </Overlay>
+  );
+}
+
+// ─── TRANSFER CARD ───
+function TransferCard({ transfer, index, currentUser, isMobile, canAR, canS, canR, onView, onApprove, onReject, onSend, onReceive }) {
+  const sc = gSC(transfer.status);
+  const uc = gUC(transfer.urgency);
+  const isIn = transfer.toBranchId === currentUser?.branchId;
+
+  return (
+    <div className="tr-glass tr-card-hover" onClick={onView} style={{ overflow: 'hidden', cursor: 'pointer', animation: `trSlideUp .4s ease ${index * .04}s backwards` }}>
+      <div style={{ height: 3, background: isIn ? 'linear-gradient(90deg,#10b981,#34d399)' : 'linear-gradient(90deg,#f59e0b,#fbbf24)' }} />
+      <div style={{ padding: isMobile ? 16 : 20 }}>
+        <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', justifyContent: 'space-between', gap: 14 }}>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 10 }}>
+              <span style={{ fontFamily: 'monospace', fontWeight: 800, fontSize: 14, color: 'white' }}>{transfer.transferNumber}</span>
+              <Badge {...sc} />
+              <Badge text={isIn ? '📥 Incoming' : '📤 Outgoing'}
+                bg={isIn ? 'rgba(16,185,129,.12)' : 'rgba(245,158,11,.12)'}
+                bd={isIn ? 'rgba(16,185,129,.25)' : 'rgba(245,158,11,.25)'}
+                c={isIn ? '#6ee7b7' : '#fcd34d'} />
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6, flexWrap: 'wrap' }}>
+              <span style={{ padding: '3px 10px', borderRadius: 8, background: 'rgba(255,255,255,.05)', border: '1px solid rgba(255,255,255,.07)', fontSize: 12, fontWeight: 600, color: 'rgba(255,255,255,.6)' }}>{transfer.fromBranch?.name}</span>
+              <span style={{ color: 'rgba(255,255,255,.3)' }}>→</span>
+              <span style={{ padding: '3px 10px', borderRadius: 8, background: 'rgba(255,255,255,.05)', border: '1px solid rgba(255,255,255,.07)', fontSize: 12, fontWeight: 600, color: 'rgba(255,255,255,.6)' }}>{transfer.toBranch?.name}</span>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12, fontSize: 13 }}>
+              <span style={{ color: 'rgba(255,255,255,.4)' }}><strong style={{ color: 'white' }}>{transfer.items?.length || 0}</strong> item(s)</span>
+              <span style={{ color: uc.c, display: 'flex', alignItems: 'center', gap: 4 }}>{uc.icon} {uc.label}</span>
+            </div>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0, flexWrap: 'wrap' }}>
+            {canAR && (
               <>
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onApprove();
-                  }}
-                  style={{
-                    padding: '8px 16px',
-                    background: '#d1fae5',
-                    border: 'none',
-                    borderRadius: '8px',
-                    color: '#059669',
-                    fontWeight: '600',
-                    fontSize: '13px',
-                    cursor: 'pointer'
-                  }}
-                >
-                  ✓ Approve
-                </button>
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onReject();
-                  }}
-                  style={{
-                    padding: '8px 16px',
-                    background: '#fee2e2',
-                    border: 'none',
-                    borderRadius: '8px',
-                    color: '#dc2626',
-                    fontWeight: '600',
-                    fontSize: '13px',
-                    cursor: 'pointer'
-                  }}
-                >
-                  ✕ Reject
-                </button>
+                <SmBtn onClick={e => { e.stopPropagation(); onApprove(); }} label="✓ Approve" bg="rgba(16,185,129,.12)" bd="rgba(16,185,129,.2)" c="#6ee7b7" />
+                <SmBtn onClick={e => { e.stopPropagation(); onReject(); }} label="✕ Reject" bg="rgba(239,68,68,.08)" bd="rgba(239,68,68,.15)" c="#fca5a5" />
               </>
             )}
-
-            {canSend && (
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onSend();
-                }}
-                style={{
-                  padding: '8px 16px',
-                  background: 'linear-gradient(135deg, #8b5cf6 0%, #6d28d9 100%)',
-                  border: 'none',
-                  borderRadius: '8px',
-                  color: 'white',
-                  fontWeight: '600',
-                  fontSize: '13px',
-                  cursor: 'pointer'
-                }}
-              >
-                🚚 Send Items
-              </button>
-            )}
-
-            {canReceive && (
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onReceive();
-                }}
-                style={{
-                  padding: '8px 16px',
-                  background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
-                  border: 'none',
-                  borderRadius: '8px',
-                  color: 'white',
-                  fontWeight: '600',
-                  fontSize: '13px',
-                  cursor: 'pointer'
-                }}
-              >
-                ✓ Receive
-              </button>
-            )}
-
-            <span style={{ color: '#6b7280', fontSize: '13px' }}>
-              {new Date(transfer.createdAt).toLocaleDateString('en-IN', {
-                day: 'numeric',
-                month: 'short'
-              })}
+            {canS && <SmBtn onClick={e => { e.stopPropagation(); onSend(); }} label="🚚 Send" grad="linear-gradient(135deg,#8b5cf6,#6d28d9)" />}
+            {canR && <SmBtn onClick={e => { e.stopPropagation(); onReceive(); }} label="✓ Receive" grad="linear-gradient(135deg,#10b981,#059669)" />}
+            <span style={{ color: 'rgba(255,255,255,.3)', fontSize: 11, fontWeight: 500 }}>
+              {new Date(transfer.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}
             </span>
           </div>
         </div>
@@ -1043,1132 +684,132 @@ function TransferCard({
   );
 }
 
-function CreateTransferModal({
-  isMobile,
-  formData,
-  setFormData,
-  branches,
-  parts,
-  allParts,
-  currentUser,
-  onSubmit,
-  onClose,
-  addItem,
-  removeItem,
-  updateItem,
-  submitting
-}) {
-  const otherBranches = branches.filter(b => b.id !== currentUser?.branchId);
-  const isSuperAdmin = currentUser?.role === 'SUPER_ADMIN';
-
-  // For managers, they request TO their branch, so source is other branches
-  // For super admin, they can set both
-  
+// ─── SHARED COMPONENTS ───
+function Overlay({ children, onClose, z = 100 }) {
   return (
-    <div
-      style={{
-        position: 'fixed',
-        top: 0,
-        left: 0,
-        right: 0,
-        bottom: 0,
-        background: 'rgba(0,0,0,0.5)',
-        backdropFilter: 'blur(4px)',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        zIndex: 50,
-        padding: '16px'
-      }}
-      onClick={onClose}
-    >
-      <div
-        style={{
-          background: 'white',
-          borderRadius: '24px',
-          boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)',
-          width: '100%',
-          maxWidth: '700px',
-          maxHeight: '90vh',
-          overflow: 'hidden',
-          animation: 'slideUp 0.3s ease-out'
-        }}
-        onClick={(e) => e.stopPropagation()}
-      >
-        {/* Header */}
-        <div style={{
-          background: 'linear-gradient(135deg, #8b5cf6 0%, #6d28d9 100%)',
-          padding: '24px',
-          color: 'white'
-        }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <div>
-              <h2 style={{ fontSize: '24px', fontWeight: '700', margin: 0, marginBottom: '4px' }}>
-                🔄 Request Transfer
-              </h2>
-              <p style={{ fontSize: '14px', opacity: 0.9, margin: 0 }}>
-                Request inventory items from another branch
-              </p>
-            </div>
-            <button
-              onClick={onClose}
-              style={{
-                padding: '8px',
-                background: 'rgba(255,255,255,0.15)',
-                border: 'none',
-                borderRadius: '10px',
-                color: 'white',
-                cursor: 'pointer'
-              }}
-            >
-              <svg style={{ width: '20px', height: '20px' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-              </svg>
-            </button>
-          </div>
+    <div className="tr-overlay" onClick={onClose} style={{ position: 'fixed', inset: 0, zIndex: z, background: 'rgba(0,0,0,.65)', backdropFilter: 'blur(8px)', WebkitBackdropFilter: 'blur(8px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+      <div className="tr-modal" onClick={e => e.stopPropagation()}>{children}</div>
+    </div>
+  );
+}
+
+function MHead({ grad, title, sub, onClose }) {
+  return (
+    <div style={{ padding: '18px 22px', background: grad, borderRadius: '20px 20px 0 0', position: 'relative', overflow: 'hidden' }}>
+      <div style={{ position: 'absolute', top: -30, right: -30, width: 80, height: 80, borderRadius: '50%', background: 'rgba(255,255,255,.1)', pointerEvents: 'none' }} />
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', position: 'relative', zIndex: 1 }}>
+        <div>
+          <h2 style={{ margin: 0, fontSize: 17, fontWeight: 800, color: 'white' }}>{title}</h2>
+          <p style={{ margin: '3px 0 0', fontSize: 12, color: 'rgba(255,255,255,.7)' }}>{sub}</p>
         </div>
-
-        {/* Content */}
-        <form onSubmit={onSubmit}>
-          <div style={{ padding: '24px', maxHeight: 'calc(90vh - 200px)', overflowY: 'auto' }}>
-            {/* Branch Selection */}
-            <div style={{
-              display: 'grid',
-              gridTemplateColumns: isMobile ? '1fr' : '1fr auto 1fr',
-              gap: '16px',
-              alignItems: 'end',
-              marginBottom: '24px'
-            }}>
-              {/* Source Branch */}
-              <div>
-                <label style={{
-                  display: 'block',
-                  fontSize: '14px',
-                  fontWeight: '600',
-                  color: '#374151',
-                  marginBottom: '8px'
-                }}>
-                  From Branch <span style={{ color: '#ef4444' }}>*</span>
-                </label>
-                <select
-                  value={formData.fromBranchId}
-                  onChange={(e) => setFormData(prev => ({ 
-                    ...prev, 
-                    fromBranchId: e.target.value,
-                    items: [{ partId: '', quantity: 1, notes: '' }] // Reset items when branch changes
-                  }))}
-                  required
-                  style={{
-                    width: '100%',
-                    padding: '12px 16px',
-                    border: '2px solid #e5e7eb',
-                    borderRadius: '12px',
-                    fontSize: '15px',
-                    background: 'white'
-                  }}
-                >
-                  <option value="">Select source branch...</option>
-                  {(isSuperAdmin ? branches : otherBranches).map(branch => (
-                    <option key={branch.id} value={branch.id}>
-                      {branch.name} - {branch.location}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              {/* Arrow */}
-              {!isMobile && (
-                <div style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  paddingBottom: '8px'
-                }}>
-                  <svg style={{ width: '32px', height: '32px', color: '#8b5cf6' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 8l4 4m0 0l-4 4m4-4H3" />
-                  </svg>
-                </div>
-              )}
-
-              {/* Destination Branch */}
-              <div>
-                <label style={{
-                  display: 'block',
-                  fontSize: '14px',
-                  fontWeight: '600',
-                  color: '#374151',
-                  marginBottom: '8px'
-                }}>
-                  To Branch <span style={{ color: '#ef4444' }}>*</span>
-                </label>
-                {isSuperAdmin ? (
-                  <select
-                    value={formData.toBranchId}
-                    onChange={(e) => setFormData(prev => ({ ...prev, toBranchId: e.target.value }))}
-                    required
-                    style={{
-                      width: '100%',
-                      padding: '12px 16px',
-                      border: '2px solid #e5e7eb',
-                      borderRadius: '12px',
-                      fontSize: '15px',
-                      background: 'white'
-                    }}
-                  >
-                    <option value="">Select destination branch...</option>
-                    {branches.filter(b => b.id !== formData.fromBranchId).map(branch => (
-                      <option key={branch.id} value={branch.id}>
-                        {branch.name} - {branch.location}
-                      </option>
-                    ))}
-                  </select>
-                ) : (
-                  <div style={{
-                    padding: '12px 16px',
-                    border: '2px solid #e5e7eb',
-                    borderRadius: '12px',
-                    background: '#f9fafb',
-                    color: '#374151',
-                    fontWeight: '500'
-                  }}>
-                    {branches.find(b => b.id === currentUser?.branchId)?.name || 'Your Branch'}
-                  </div>
-                )}
-              </div>
-            </div>
-
-            {/* Urgency */}
-            <div style={{ marginBottom: '20px' }}>
-              <label style={{
-                display: 'block',
-                fontSize: '14px',
-                fontWeight: '600',
-                color: '#374151',
-                marginBottom: '12px'
-              }}>
-                Urgency
-              </label>
-              <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
-                {[
-                  { value: 'LOW', label: '🔵 Low', color: '#3b82f6' },
-                  { value: 'MEDIUM', label: '🟡 Medium', color: '#f59e0b' },
-                  { value: 'HIGH', label: '🟠 High', color: '#f97316' },
-                  { value: 'URGENT', label: '🔴 Urgent', color: '#ef4444' }
-                ].map(option => (
-                  <label
-                    key={option.value}
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      padding: '10px 16px',
-                      border: `2px solid ${formData.urgency === option.value ? option.color : '#e5e7eb'}`,
-                      borderRadius: '10px',
-                      cursor: 'pointer',
-                      background: formData.urgency === option.value ? `${option.color}15` : 'white'
-                    }}
-                  >
-                    <input
-                      type="radio"
-                      name="urgency"
-                      value={option.value}
-                      checked={formData.urgency === option.value}
-                      onChange={(e) => setFormData(prev => ({ ...prev, urgency: e.target.value }))}
-                      style={{ display: 'none' }}
-                    />
-                    <span style={{
-                      fontWeight: '600',
-                      fontSize: '14px',
-                      color: formData.urgency === option.value ? option.color : '#6b7280'
-                    }}>
-                      {option.label}
-                    </span>
-                  </label>
-                ))}
-              </div>
-            </div>
-
-            {/* Items */}
-            <div style={{ marginBottom: '20px' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-                <label style={{
-                  fontSize: '14px',
-                  fontWeight: '600',
-                  color: '#374151'
-                }}>
-                  Request Items <span style={{ color: '#ef4444' }}>*</span>
-                </label>
-                <button
-                  type="button"
-                  onClick={addItem}
-                  disabled={!formData.fromBranchId}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '4px',
-                    padding: '8px 16px',
-                    background: formData.fromBranchId ? '#ede9fe' : '#f3f4f6',
-                    border: 'none',
-                    borderRadius: '8px',
-                    color: formData.fromBranchId ? '#7c3aed' : '#9ca3af',
-                    fontWeight: '600',
-                    fontSize: '13px',
-                    cursor: formData.fromBranchId ? 'pointer' : 'not-allowed'
-                  }}
-                >
-                  <svg style={{ width: '16px', height: '16px' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
-                  </svg>
-                  Add Item
-                </button>
-              </div>
-
-              {!formData.fromBranchId ? (
-                <div style={{
-                  padding: '24px',
-                  background: '#f9fafb',
-                  borderRadius: '12px',
-                  textAlign: 'center',
-                  color: '#6b7280'
-                }}>
-                  Select a source branch to view available items
-                </div>
-              ) : parts.length === 0 ? (
-                <div style={{
-                  padding: '24px',
-                  background: '#fef3c7',
-                  borderRadius: '12px',
-                  textAlign: 'center',
-                  color: '#92400e'
-                }}>
-                  No items with available stock in selected branch
-                </div>
-              ) : (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                  {formData.items.map((item, index) => (
-                    <div
-                      key={index}
-                      style={{
-                        padding: '16px',
-                        background: '#f9fafb',
-                        borderRadius: '12px',
-                        border: '1px solid #e5e7eb'
-                      }}
-                    >
-                      <div style={{
-                        display: 'grid',
-                        gridTemplateColumns: isMobile ? '1fr' : '2fr 1fr auto',
-                        gap: '12px',
-                        alignItems: 'end'
-                      }}>
-                        <div>
-                          <label style={{ fontSize: '12px', color: '#6b7280', marginBottom: '4px', display: 'block' }}>
-                            Part/Item
-                          </label>
-                          <select
-                            value={item.partId}
-                            onChange={(e) => updateItem(index, 'partId', e.target.value)}
-                            required
-                            style={{
-                              width: '100%',
-                              padding: '10px 12px',
-                              border: '2px solid #e5e7eb',
-                              borderRadius: '10px',
-                              fontSize: '14px',
-                              background: 'white'
-                            }}
-                          >
-                            <option value="">Select part...</option>
-                            {parts.map(part => (
-                              <option key={part.id} value={part.id}>
-                                {part.name} ({part.partNumber}) - Available: {part.quantity}
-                              </option>
-                            ))}
-                          </select>
-                        </div>
-                        <div>
-                          <label style={{ fontSize: '12px', color: '#6b7280', marginBottom: '4px', display: 'block' }}>
-                            Quantity
-                          </label>
-                          <input
-                            type="number"
-                            value={item.quantity}
-                            onChange={(e) => updateItem(index, 'quantity', parseInt(e.target.value) || 1)}
-                            min="1"
-                            required
-                            style={{
-                              width: '100%',
-                              padding: '10px 12px',
-                              border: '2px solid #e5e7eb',
-                              borderRadius: '10px',
-                              fontSize: '14px'
-                            }}
-                          />
-                        </div>
-                        {formData.items.length > 1 && (
-                          <button
-                            type="button"
-                            onClick={() => removeItem(index)}
-                            style={{
-                              padding: '10px',
-                              background: '#fee2e2',
-                              border: 'none',
-                              borderRadius: '10px',
-                              color: '#ef4444',
-                              cursor: 'pointer'
-                            }}
-                          >
-                            <svg style={{ width: '20px', height: '20px' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                            </svg>
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            {/* Notes */}
-            <div>
-              <label style={{
-                display: 'block',
-                fontSize: '14px',
-                fontWeight: '600',
-                color: '#374151',
-                marginBottom: '8px'
-              }}>
-                Notes
-              </label>
-              <textarea
-                value={formData.notes}
-                onChange={(e) => setFormData(prev => ({ ...prev, notes: e.target.value }))}
-                rows={3}
-                placeholder="Any additional notes or instructions..."
-                style={{
-                  width: '100%',
-                  padding: '12px 16px',
-                  border: '2px solid #e5e7eb',
-                  borderRadius: '12px',
-                  fontSize: '15px',
-                  resize: 'none'
-                }}
-              />
-            </div>
-          </div>
-
-          {/* Footer */}
-          <div style={{
-            padding: '20px 24px',
-            borderTop: '1px solid #e5e7eb',
-            display: 'flex',
-            gap: '12px',
-            justifyContent: 'flex-end',
-            background: '#f9fafb'
-          }}>
-            <button
-              type="button"
-              onClick={onClose}
-              disabled={submitting}
-              style={{
-                padding: '12px 24px',
-                border: '2px solid #e5e7eb',
-                borderRadius: '12px',
-                background: 'white',
-                color: '#374151',
-                fontWeight: '600',
-                cursor: 'pointer',
-                opacity: submitting ? 0.5 : 1
-              }}
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={submitting || !formData.fromBranchId}
-              style={{
-                padding: '12px 24px',
-                border: 'none',
-                borderRadius: '12px',
-                background: formData.fromBranchId
-                  ? 'linear-gradient(135deg, #8b5cf6 0%, #6d28d9 100%)'
-                  : '#e5e7eb',
-                color: formData.fromBranchId ? 'white' : '#9ca3af',
-                fontWeight: '600',
-                cursor: formData.fromBranchId ? 'pointer' : 'not-allowed',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '8px'
-              }}
-            >
-              {submitting && (
-                <div style={{
-                  width: '18px',
-                  height: '18px',
-                  border: '2px solid rgba(255,255,255,0.3)',
-                  borderTopColor: 'white',
-                  borderRadius: '50%',
-                  animation: 'spin 1s linear infinite'
-                }} />
-              )}
-              Submit Request
-            </button>
-          </div>
-        </form>
+        <CloseBtn onClick={onClose} />
       </div>
     </div>
   );
 }
 
-function TransferDetailModal({
-  isMobile,
-  transfer,
-  currentUser,
-  getStatusConfig,
-  getUrgencyConfig,
-  canApproveReject,
-  canSend,
-  canReceive,
-  onClose,
-  onApprove,
-  onReject,
-  onSend,
-  onReceive
-}) {
-  const statusConfig = getStatusConfig(transfer.status);
-  const urgencyConfig = getUrgencyConfig(transfer.urgency);
-  const isIncoming = transfer.toBranchId === currentUser?.branchId;
-
+function MFoot({ onCancel, submitting, label, grad, glow, disabled }) {
   return (
-    <div
-      style={{
-        position: 'fixed',
-        top: 0,
-        left: 0,
-        right: 0,
-        bottom: 0,
-        background: 'rgba(0,0,0,0.5)',
-        backdropFilter: 'blur(4px)',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        zIndex: 50,
-        padding: '16px'
-      }}
-      onClick={onClose}
-    >
-      <div
-        style={{
-          background: 'white',
-          borderRadius: '24px',
-          boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)',
-          width: '100%',
-          maxWidth: '650px',
-          maxHeight: '90vh',
-          overflow: 'hidden',
-          animation: 'slideUp 0.3s ease-out'
-        }}
-        onClick={(e) => e.stopPropagation()}
-      >
-        {/* Header */}
-        <div style={{
-          background: '#1f2937',
-          padding: '24px',
-          color: 'white'
-        }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-            <div>
-              <p style={{ fontSize: '14px', opacity: 0.7, margin: 0, marginBottom: '4px' }}>Transfer</p>
-              <h2 style={{ fontSize: '24px', fontWeight: '700', margin: 0, marginBottom: '12px' }}>
-                {transfer.transferNumber}
-              </h2>
-              <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                <span style={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: '4px',
-                  padding: '4px 12px',
-                  borderRadius: '20px',
-                  fontSize: '13px',
-                  fontWeight: '600',
-                  background: statusConfig.bg,
-                  color: statusConfig.color
-                }}>
-                  {statusConfig.icon} {statusConfig.label}
-                </span>
-                <span style={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: '4px',
-                  padding: '4px 12px',
-                  borderRadius: '20px',
-                  fontSize: '13px',
-                  fontWeight: '600',
-                  background: isIncoming ? '#d1fae5' : '#fef3c7',
-                  color: isIncoming ? '#059669' : '#d97706'
-                }}>
-                  {isIncoming ? '📥 Incoming' : '📤 Outgoing'}
-                </span>
-              </div>
-            </div>
-            <button
-              onClick={onClose}
-              style={{
-                padding: '8px',
-                background: 'rgba(255,255,255,0.1)',
-                border: 'none',
-                borderRadius: '10px',
-                color: 'white',
-                cursor: 'pointer'
-              }}
-            >
-              <svg style={{ width: '20px', height: '20px' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-              </svg>
-            </button>
-          </div>
-        </div>
+    <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 22, paddingTop: 18, borderTop: '1px solid rgba(255,255,255,.06)' }}>
+      <GBtn onClick={onCancel} label="Cancel" outline color="rgba(255,255,255,.4)" disabled={submitting} />
+      <button type="submit" disabled={submitting || disabled} className="tr-btn" style={{
+        padding: '10px 22px', borderRadius: 12, background: grad, border: 'none', color: 'white', fontSize: 13, fontWeight: 700,
+        opacity: (submitting || disabled) ? .5 : 1, display: 'flex', alignItems: 'center', gap: 8, boxShadow: `0 4px 14px ${glow}`,
+      }}>
+        {submitting && <Spin />}{label}
+      </button>
+    </div>
+  );
+}
 
-        {/* Content */}
-        <div style={{ padding: '24px', maxHeight: 'calc(90vh - 280px)', overflowY: 'auto' }}>
-          {/* Transfer Route */}
-          <div style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            gap: '16px',
-            padding: '20px',
-            background: '#f8fafc',
-            borderRadius: '16px',
-            marginBottom: '24px'
-          }}>
-            <div style={{ textAlign: 'center', flex: 1 }}>
-              <p style={{ fontSize: '12px', color: '#6b7280', margin: 0, marginBottom: '4px' }}>FROM</p>
-              <p style={{ fontWeight: '700', fontSize: '16px', color: '#1a202c', margin: 0 }}>
-                {transfer.fromBranch?.name}
-              </p>
-              <p style={{ fontSize: '13px', color: '#6b7280', margin: 0 }}>
-                {transfer.fromBranch?.location}
-              </p>
-            </div>
-            <div style={{
-              width: '48px',
-              height: '48px',
-              background: 'linear-gradient(135deg, #8b5cf6 0%, #6d28d9 100%)',
-              borderRadius: '50%',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              flexShrink: 0
-            }}>
-              <svg style={{ width: '24px', height: '24px', color: 'white' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 8l4 4m0 0l-4 4m4-4H3" />
-              </svg>
-            </div>
-            <div style={{ textAlign: 'center', flex: 1 }}>
-              <p style={{ fontSize: '12px', color: '#6b7280', margin: 0, marginBottom: '4px' }}>TO</p>
-              <p style={{ fontWeight: '700', fontSize: '16px', color: '#1a202c', margin: 0 }}>
-                {transfer.toBranch?.name}
-              </p>
-              <p style={{ fontSize: '13px', color: '#6b7280', margin: 0 }}>
-                {transfer.toBranch?.location}
-              </p>
-            </div>
-          </div>
+function Badge({ label, icon, c, bg, bd, text }) {
+  return (
+    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, padding: '3px 10px', borderRadius: 14, background: bg, border: `1px solid ${bd}`, color: c, fontSize: 11, fontWeight: 700, whiteSpace: 'nowrap' }}>
+      {text || `${icon} ${label}`}
+    </span>
+  );
+}
 
-          {/* Info Grid */}
-          <div style={{
-            display: 'grid',
-            gridTemplateColumns: 'repeat(2, 1fr)',
-            gap: '16px',
-            marginBottom: '24px'
-          }}>
-            <div>
-              <p style={{ fontSize: '12px', color: '#6b7280', margin: 0, marginBottom: '4px' }}>Requested By</p>
-              <p style={{ fontSize: '14px', fontWeight: '600', color: '#1a202c', margin: 0 }}>
-                {transfer.requestedBy?.name}
-              </p>
-            </div>
-            <div>
-              <p style={{ fontSize: '12px', color: '#6b7280', margin: 0, marginBottom: '4px' }}>Urgency</p>
-              <p style={{
-                fontSize: '14px',
-                fontWeight: '600',
-                color: urgencyConfig.color,
-                margin: 0,
-                display: 'flex',
-                alignItems: 'center',
-                gap: '4px'
-              }}>
-                {urgencyConfig.icon} {urgencyConfig.label}
-              </p>
-            </div>
-            <div>
-              <p style={{ fontSize: '12px', color: '#6b7280', margin: 0, marginBottom: '4px' }}>Created</p>
-              <p style={{ fontSize: '14px', fontWeight: '600', color: '#1a202c', margin: 0 }}>
-                {new Date(transfer.createdAt).toLocaleDateString('en-IN', {
-                  day: 'numeric',
-                  month: 'short',
-                  year: 'numeric'
-                })}
-              </p>
-            </div>
-            {transfer.approvedBy && (
-              <div>
-                <p style={{ fontSize: '12px', color: '#6b7280', margin: 0, marginBottom: '4px' }}>Approved By</p>
-                <p style={{ fontSize: '14px', fontWeight: '600', color: '#1a202c', margin: 0 }}>
-                  {transfer.approvedBy?.name}
-                </p>
-              </div>
-            )}
-          </div>
+function GBtn({ onClick, label, icon, grad, glow, outline, color, borderColor, disabled, full, style = {} }) {
+  return (
+    <button onClick={onClick} disabled={disabled} className="tr-btn" style={{
+      padding: '10px 20px', borderRadius: 12, fontSize: 13, fontWeight: 700,
+      background: outline ? 'transparent' : (grad || 'rgba(255,255,255,.06)'),
+      border: outline ? `1px solid ${borderColor || color || 'rgba(255,255,255,.15)'}` : 'none',
+      color: outline ? (color || 'rgba(255,255,255,.6)') : 'white',
+      boxShadow: glow ? `0 4px 14px ${glow}` : 'none',
+      opacity: disabled ? .5 : 1, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+      width: full ? '100%' : 'auto', ...style,
+    }}>{icon && <span>{icon}</span>}{label}</button>
+  );
+}
 
-          {/* Items */}
-          <div style={{ marginBottom: '20px' }}>
-            <p style={{ fontSize: '13px', color: '#6b7280', margin: 0, marginBottom: '12px', fontWeight: '600' }}>
-              TRANSFER ITEMS
-            </p>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-              {transfer.items?.map((item, index) => (
-                <div
-                  key={index}
-                  style={{
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    alignItems: 'center',
-                    padding: '12px 16px',
-                    background: '#f9fafb',
-                    borderRadius: '10px'
-                  }}
-                >
-                  <div>
-                    <p style={{ fontWeight: '600', color: '#1a202c', margin: 0, marginBottom: '2px', fontSize: '14px' }}>
-                      {item.part?.name}
-                    </p>
-                    <p style={{ fontSize: '12px', color: '#6b7280', margin: 0, fontFamily: 'monospace' }}>
-                      {item.part?.partNumber}
-                    </p>
-                  </div>
-                  <div style={{ textAlign: 'right' }}>
-                    <p style={{ fontWeight: '700', color: '#1a202c', margin: 0, fontSize: '16px' }}>
-                      {item.quantityRequested}
-                    </p>
-                    {item.quantitySent !== null && (
-                      <p style={{ fontSize: '12px', color: '#6b7280', margin: 0 }}>
-                        Sent: {item.quantitySent}
-                      </p>
-                    )}
-                    {item.quantityReceived !== null && (
-                      <p style={{ fontSize: '12px', color: '#10b981', margin: 0 }}>
-                        Received: {item.quantityReceived}
-                      </p>
-                    )}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
+function SmBtn({ onClick, label, bg, bd, c, grad }) {
+  return (
+    <button onClick={onClick} className="tr-btn" style={{
+      padding: '7px 14px', borderRadius: 9, fontSize: 12, fontWeight: 700,
+      background: grad || bg, border: grad ? 'none' : `1px solid ${bd}`,
+      color: grad ? 'white' : c,
+      boxShadow: grad ? '0 4px 12px rgba(0,0,0,.2)' : 'none',
+    }}>{label}</button>
+  );
+}
 
-          {/* Notes */}
-          {transfer.notes && (
-            <div>
-              <p style={{ fontSize: '12px', color: '#6b7280', margin: 0, marginBottom: '4px' }}>Notes</p>
-              <p style={{ fontSize: '14px', color: '#1a202c', margin: 0 }}>{transfer.notes}</p>
-            </div>
-          )}
+function CloseBtn({ onClick }) {
+  return (
+    <button onClick={onClick} style={{ width: 30, height: 30, borderRadius: 9, background: 'rgba(255,255,255,.14)', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+      <svg style={{ width: 15, height: 15, color: 'white' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M6 18L18 6M6 6l12 12" />
+      </svg>
+    </button>
+  );
+}
 
-          {/* Rejection Reason */}
-          {transfer.status === 'REJECTED' && transfer.rejectionReason && (
-            <div style={{
-              background: '#fef2f2',
-              borderRadius: '12px',
-              padding: '16px',
-              border: '1px solid #fecaca',
-              marginTop: '16px'
-            }}>
-              <p style={{ fontSize: '12px', color: '#b91c1c', margin: 0, marginBottom: '4px', fontWeight: '600' }}>
-                Rejection Reason
-              </p>
-              <p style={{ fontSize: '14px', color: '#dc2626', margin: 0 }}>{transfer.rejectionReason}</p>
-            </div>
-          )}
-        </div>
+function ClearBtn({ onClick }) {
+  return (
+    <button onClick={onClick} className="tr-btn" style={{ padding: '10px 14px', borderRadius: 12, background: 'rgba(255,255,255,.04)', border: '1px solid rgba(255,255,255,.08)', color: 'rgba(255,255,255,.5)', fontSize: 13, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 6 }}>
+      ✕ Clear
+    </button>
+  );
+}
 
-        {/* Footer Actions */}
-        <div style={{
-          padding: '20px 24px',
-          borderTop: '1px solid #e5e7eb',
-          display: 'flex',
-          gap: '12px',
-          justifyContent: 'flex-end',
-          background: '#f9fafb',
-          flexWrap: 'wrap'
-        }}>
-          <button
-            onClick={onClose}
-            style={{
-              padding: '12px 24px',
-              border: '2px solid #e5e7eb',
-              borderRadius: '12px',
-              background: 'white',
-              color: '#374151',
-              fontWeight: '600',
-              cursor: 'pointer'
-            }}
-          >
-            Close
-          </button>
+function Spin() {
+  return <div style={{ width: 15, height: 15, border: '2px solid rgba(255,255,255,.2)', borderTopColor: 'white', borderRadius: '50%', animation: 'trSpin .6s linear infinite', flexShrink: 0 }} />;
+}
 
-          {canApproveReject && (
-            <>
-              <button
-                onClick={onReject}
-                style={{
-                  padding: '12px 24px',
-                  border: '2px solid #ef4444',
-                  borderRadius: '12px',
-                  background: 'white',
-                  color: '#ef4444',
-                  fontWeight: '600',
-                  cursor: 'pointer'
-                }}
-              >
-                Reject
-              </button>
-              <button
-                onClick={onApprove}
-                style={{
-                  padding: '12px 24px',
-                  border: 'none',
-                  borderRadius: '12px',
-                  background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
-                  color: 'white',
-                  fontWeight: '600',
-                  cursor: 'pointer'
-                }}
-              >
-                Approve
-              </button>
-            </>
-          )}
-
-          {canSend && (
-            <button
-              onClick={onSend}
-              style={{
-                padding: '12px 24px',
-                border: 'none',
-                borderRadius: '12px',
-                background: 'linear-gradient(135deg, #8b5cf6 0%, #6d28d9 100%)',
-                color: 'white',
-                fontWeight: '600',
-                cursor: 'pointer'
-              }}
-            >
-              🚚 Send Items
-            </button>
-          )}
-
-          {canReceive && (
-            <button
-              onClick={onReceive}
-              style={{
-                padding: '12px 24px',
-                border: 'none',
-                borderRadius: '12px',
-                background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
-                color: 'white',
-                fontWeight: '600',
-                cursor: 'pointer'
-              }}
-            >
-              ✓ Confirm Receipt
-            </button>
-          )}
-        </div>
+function Loader({ text }) {
+  return (
+    <div style={{ display: 'flex', justifyContent: 'center', padding: '80px 20px' }}>
+      <div style={{ textAlign: 'center' }}>
+        <div style={{ width: 44, height: 44, margin: '0 auto 14px', border: '3px solid rgba(255,255,255,.1)', borderTopColor: '#8b5cf6', borderRadius: '50%', animation: 'trSpin .8s linear infinite' }} />
+        <p style={{ color: 'rgba(255,255,255,.4)', fontSize: 14, fontWeight: 500 }}>{text}</p>
       </div>
     </div>
   );
 }
 
-function TransferActionModal({
-  isMobile,
-  transfer,
-  actionType,
-  onClose,
-  onSubmit,
-  submitting
-}) {
-  const [itemData, setItemData] = useState(
-    transfer.items?.map(item => ({
-      id: item.id,
-      partName: item.part?.name,
-      quantityRequested: item.quantityRequested,
-      quantitySent: item.quantitySent || item.quantityRequested,
-      quantityReceived: item.quantityReceived || item.quantitySent || item.quantityRequested,
-    })) || []
-  );
-  const [rejectionReason, setRejectionReason] = useState('');
-
-  const handleQuantityChange = (itemId, field, value) => {
-    setItemData(prev => prev.map(item =>
-      item.id === itemId ? { ...item, [field]: parseInt(value) || 0 } : item
-    ));
-  };
-
-  const handleSubmit = () => {
-    if (actionType === 'reject') {
-      onSubmit({ rejectionReason });
-    } else if (actionType === 'approve' || actionType === 'send') {
-      onSubmit({
-        items: itemData.map(item => ({
-          id: item.id,
-          quantitySent: item.quantitySent
-        }))
-      });
-    } else if (actionType === 'receive') {
-      onSubmit({
-        items: itemData.map(item => ({
-          id: item.id,
-          quantityReceived: item.quantityReceived
-        }))
-      });
-    }
-  };
-
-  const getActionConfig = () => {
-    const configs = {
-      approve: {
-        title: '✅ Approve Transfer',
-        subtitle: 'Set quantities to send',
-        buttonText: 'Approve & Set Quantities',
-        buttonColor: 'linear-gradient(135deg, #10b981 0%, #059669 100%)'
-      },
-      reject: {
-        title: '❌ Reject Transfer',
-        subtitle: 'Provide a reason for rejection',
-        buttonText: 'Reject Transfer',
-        buttonColor: 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)'
-      },
-      send: {
-        title: '🚚 Send Items',
-        subtitle: 'Confirm items being dispatched',
-        buttonText: 'Confirm Dispatch',
-        buttonColor: 'linear-gradient(135deg, #8b5cf6 0%, #6d28d9 100%)'
-      },
-      receive: {
-        title: '📦 Receive Items',
-        subtitle: 'Confirm received quantities',
-        buttonText: 'Confirm Receipt',
-        buttonColor: 'linear-gradient(135deg, #10b981 0%, #059669 100%)'
-      }
-    };
-    return configs[actionType] || configs.approve;
-  };
-
-  const actionConfig = getActionConfig();
-
+function Empty({ icon, title, sub, showBtn, onBtn, btnLabel }) {
   return (
-    <div
-      style={{
-        position: 'fixed',
-        top: 0,
-        left: 0,
-        right: 0,
-        bottom: 0,
-        background: 'rgba(0,0,0,0.5)',
-        backdropFilter: 'blur(4px)',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        zIndex: 60,
-        padding: '16px'
-      }}
-      onClick={onClose}
-    >
-      <div
-        style={{
-          background: 'white',
-          borderRadius: '24px',
-          boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)',
-          width: '100%',
-          maxWidth: '550px',
-          maxHeight: '90vh',
-          overflow: 'hidden',
-          animation: 'slideUp 0.3s ease-out'
-        }}
-        onClick={(e) => e.stopPropagation()}
-      >
-        {/* Header */}
-        <div style={{
-          background: actionType === 'reject' ? '#fef2f2' : '#f0fdf4',
-          padding: '24px',
-          borderBottom: `2px solid ${actionType === 'reject' ? '#fecaca' : '#bbf7d0'}`
-        }}>
-          <h2 style={{
-            fontSize: '22px',
-            fontWeight: '700',
-            margin: 0,
-            marginBottom: '4px',
-            color: actionType === 'reject' ? '#b91c1c' : '#15803d'
-          }}>
-            {actionConfig.title}
-          </h2>
-          <p style={{
-            fontSize: '14px',
-            color: actionType === 'reject' ? '#dc2626' : '#16a34a',
-            margin: 0
-          }}>
-            {actionConfig.subtitle}
-          </p>
-        </div>
+    <div className="tr-glass" style={{ padding: '60px 24px', textAlign: 'center', animation: 'trScaleIn .5s ease' }}>
+      <div style={{ width: 72, height: 72, borderRadius: 22, background: 'rgba(139,92,246,.12)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 20px', fontSize: 32, animation: 'trFloat 3s ease-in-out infinite' }}>{icon}</div>
+      <h3 style={{ margin: '0 0 8px', fontSize: 18, fontWeight: 700, color: 'white' }}>{title}</h3>
+      <p style={{ margin: '0 0 24px', fontSize: 14, color: 'rgba(255,255,255,.4)' }}>{sub}</p>
+      {showBtn && <GBtn onClick={onBtn} label={btnLabel} icon="🔄" grad="linear-gradient(135deg,#8b5cf6,#6d28d9)" glow="rgba(139,92,246,.35)" />}
+    </div>
+  );
+}
 
-        {/* Content */}
-        <div style={{ padding: '24px', maxHeight: 'calc(90vh - 200px)', overflowY: 'auto' }}>
-          {actionType === 'reject' ? (
-            <div>
-              <label style={{
-                display: 'block',
-                fontSize: '14px',
-                fontWeight: '600',
-                color: '#374151',
-                marginBottom: '8px'
-              }}>
-                Reason for Rejection
-              </label>
-              <textarea
-                value={rejectionReason}
-                onChange={(e) => setRejectionReason(e.target.value)}
-                rows={4}
-                placeholder="Explain why this transfer is being rejected..."
-                style={{
-                  width: '100%',
-                  padding: '12px 16px',
-                  border: '2px solid #fecaca',
-                  borderRadius: '12px',
-                  fontSize: '15px',
-                  resize: 'none'
-                }}
-              />
-            </div>
-          ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-              {itemData.map((item, index) => (
-                <div
-                  key={item.id}
-                  style={{
-                    padding: '16px',
-                    background: '#f9fafb',
-                    borderRadius: '12px',
-                    border: '1px solid #e5e7eb'
-                  }}
-                >
-                  <div style={{
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    alignItems: 'center',
-                    marginBottom: '12px'
-                  }}>
-                    <div>
-                      <p style={{ fontWeight: '600', color: '#1a202c', margin: 0 }}>
-                        {item.partName}
-                      </p>
-                      <p style={{ fontSize: '13px', color: '#6b7280', margin: 0 }}>
-                        Requested: {item.quantityRequested}
-                      </p>
-                    </div>
-                  </div>
-
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                    <label style={{ fontSize: '14px', color: '#374151', fontWeight: '500' }}>
-                      {actionType === 'receive' ? 'Received:' : 'Quantity:'}
-                    </label>
-                    <input
-                      type="number"
-                      value={actionType === 'receive' ? item.quantityReceived : item.quantitySent}
-                      onChange={(e) => handleQuantityChange(
-                        item.id,
-                        actionType === 'receive' ? 'quantityReceived' : 'quantitySent',
-                        e.target.value
-                      )}
-                      min="0"
-                      max={item.quantityRequested}
-                      style={{
-                        width: '100px',
-                        padding: '10px 12px',
-                        border: '2px solid #e5e7eb',
-                        borderRadius: '10px',
-                        fontSize: '16px',
-                        fontWeight: '600',
-                        textAlign: 'center'
-                      }}
-                    />
-                    <span style={{ fontSize: '13px', color: '#6b7280' }}>
-                      / {item.quantityRequested}
-                    </span>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-
-        {/* Footer */}
-        <div style={{
-          padding: '20px 24px',
-          borderTop: '1px solid #e5e7eb',
-          display: 'flex',
-          gap: '12px',
-          justifyContent: 'flex-end',
-          background: '#f9fafb'
-        }}>
-          <button
-            onClick={onClose}
-            disabled={submitting}
-            style={{
-              padding: '12px 24px',
-              border: '2px solid #e5e7eb',
-              borderRadius: '12px',
-              background: 'white',
-              color: '#374151',
-              fontWeight: '600',
-              cursor: 'pointer',
-              opacity: submitting ? 0.5 : 1
-            }}
-          >
-            Cancel
-          </button>
-          <button
-            onClick={handleSubmit}
-            disabled={submitting}
-            style={{
-              padding: '12px 24px',
-              border: 'none',
-              borderRadius: '12px',
-              background: actionConfig.buttonColor,
-              color: 'white',
-              fontWeight: '600',
-              cursor: submitting ? 'not-allowed' : 'pointer',
-              opacity: submitting ? 0.7 : 1,
-              display: 'flex',
-              alignItems: 'center',
-              gap: '8px'
-            }}
-          >
-            {submitting && (
-              <div style={{
-                width: '18px',
-                height: '18px',
-                border: '2px solid rgba(255,255,255,0.3)',
-                borderTopColor: 'white',
-                borderRadius: '50%',
-                animation: 'spin 1s linear infinite'
-              }} />
-            )}
-            {actionConfig.buttonText}
-          </button>
+function AlertBanner({ icon, title, sub, color, onClick, btnLabel }) {
+  return (
+    <div style={{ padding: 16, marginBottom: 14, borderRadius: 16, background: `${color}0d`, border: `1px solid ${color}25`, display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12, animation: 'trSlideUp .5s ease .15s backwards' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+        <span style={{ fontSize: 26 }}>{icon}</span>
+        <div>
+          <p style={{ margin: 0, fontWeight: 700, color, fontSize: 14 }}>{title}</p>
+          <p style={{ margin: '2px 0 0', fontSize: 12, color: 'rgba(255,255,255,.4)' }}>{sub}</p>
         </div>
       </div>
+      <button onClick={onClick} className="tr-btn" style={{ padding: '8px 16px', borderRadius: 10, background: `${color}20`, border: `1px solid ${color}30`, color, fontSize: 12, fontWeight: 700 }}>{btnLabel}</button>
     </div>
   );
 }

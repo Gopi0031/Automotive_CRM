@@ -5,20 +5,17 @@ import { useState, useEffect } from 'react';
 import { useActivities } from '../hooks/useActivities';
 import { ActivityIcons, getActivityColor } from '../lib/activityService';
 
-export default function ActivityFeed({ 
-  maxHeight = '500px', 
+export default function ActivityFeed({
+  maxHeight = '500px',
   showHeader = true,
-  limit = 20 
+  limit = 20,
 }) {
   const { activities, loading, error, refresh } = useActivities(5000);
   const [filter, setFilter] = useState('all');
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [hoveredItem, setHoveredItem] = useState(null);
 
-  const filteredActivities = activities.filter(activity => {
-    if (filter === 'all') return true;
-    return activity.entity === filter;
-  });
+  const filtered = activities.filter(a => filter === 'all' || a.entity === filter);
 
   const handleRefresh = async () => {
     setIsRefreshing(true);
@@ -26,39 +23,34 @@ export default function ActivityFeed({
     setTimeout(() => setIsRefreshing(false), 600);
   };
 
-  const formatTimeAgo = (date) => {
-    const seconds = Math.floor((new Date() - new Date(date)) / 1000);
-    
-    if (seconds < 60) return 'just now';
-    if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`;
-    if (seconds < 86400) return `${Math.floor(seconds / 3600)}h ago`;
-    return `${Math.floor(seconds / 86400)}d ago`;
+  const timeAgo = (d) => {
+    const s = Math.floor((Date.now() - new Date(d)) / 1000);
+    if (s < 60) return 'just now';
+    if (s < 3600) return `${Math.floor(s / 60)}m ago`;
+    if (s < 86400) return `${Math.floor(s / 3600)}h ago`;
+    return `${Math.floor(s / 86400)}d ago`;
   };
 
+  // Loading state
   if (loading && activities.length === 0) {
     return (
-      <div style={{
-        background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-        borderRadius: '24px',
-        padding: '48px',
-        boxShadow: '0 20px 60px rgba(102, 126, 234, 0.3)',
-        position: 'relative',
-        overflow: 'hidden'
+      <div className="glass-card" style={{
+        borderRadius: 24, padding: 48,
+        position: 'relative', overflow: 'hidden',
       }}>
-        {/* Animated background gradient */}
-        <div style={{
-          position: 'absolute',
-          top: '-50%',
-          left: '-50%',
-          width: '200%',
-          height: '200%',
-          background: 'radial-gradient(circle, rgba(255,255,255,0.1) 0%, transparent 70%)',
-          animation: 'rotate 20s linear infinite',
-        }} />
-        
         <div style={{ textAlign: 'center', position: 'relative', zIndex: 1 }}>
-          <LoadingSpinner />
-          <p style={{ color: 'white', marginTop: '24px', fontSize: '16px', fontWeight: '500' }}>
+          <div style={{ width: 56, height: 56, margin: '0 auto', position: 'relative' }}>
+            {[0, 1, 2].map(i => (
+              <div key={i} style={{
+                position: 'absolute', inset: i * 6,
+                borderRadius: '50%',
+                border: '2px solid transparent',
+                borderTopColor: i === 0 ? '#6366f1' : i === 1 ? '#3b82f6' : '#06b6d4',
+                animation: `rotate ${1.2 - i * 0.2}s linear infinite`,
+              }} />
+            ))}
+          </div>
+          <p style={{ color: 'rgba(255,255,255,0.5)', marginTop: 20, fontSize: 14, fontWeight: 500 }}>
             Loading activities...
           </p>
         </div>
@@ -66,459 +58,281 @@ export default function ActivityFeed({
     );
   }
 
+  // Error state
   if (error) {
     return (
-      <div style={{
-        background: 'linear-gradient(135deg, #f093fb 0%, #f5576c 100%)',
-        borderRadius: '24px',
-        padding: '48px',
-        boxShadow: '0 20px 60px rgba(240, 147, 251, 0.3)',
+      <div className="glass-card" style={{
+        borderRadius: 24, padding: 48,
+        border: '1px solid rgba(239,68,68,0.2)',
       }}>
         <div style={{ textAlign: 'center' }}>
           <div style={{
-            width: '64px',
-            height: '64px',
-            background: 'rgba(255,255,255,0.2)',
-            borderRadius: '50%',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            margin: '0 auto 16px',
-            backdropFilter: 'blur(10px)'
+            width: 64, height: 64, borderRadius: 18,
+            background: 'rgba(239,68,68,0.1)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            margin: '0 auto 16px', fontSize: 28,
           }}>
-            <svg style={{ width: '32px', height: '32px', color: 'white' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-            </svg>
+            ⚠️
           </div>
-          <p style={{ color: 'white', fontWeight: '600', fontSize: '18px' }}>{error}</p>
+          <p style={{ color: '#f87171', fontWeight: 600, fontSize: 16 }}>{error}</p>
         </div>
       </div>
     );
   }
 
   return (
-    <div style={{
-      background: 'white',
-      borderRadius: '24px',
-      boxShadow: '0 4px 24px rgba(0,0,0,0.06)',
-      overflow: 'hidden',
-      border: '1px solid rgba(0,0,0,0.05)',
-      transition: 'all 0.4s cubic-bezier(0.4, 0, 0.2, 1)',
-    }}>
-      {showHeader && (
-        <div style={{
-          padding: '24px',
-          borderBottom: '1px solid rgba(0,0,0,0.05)',
-          background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-          position: 'relative',
-          overflow: 'hidden'
-        }}>
-          {/* Animated background pattern */}
-          <div style={{
-            position: 'absolute',
-            top: 0,
-            left: 0,
-            right: 0,
-            bottom: 0,
-            opacity: 0.1,
-            backgroundImage: `url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%23ffffff' fill-opacity='1'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E")`,
-          }} />
-
-          <div style={{ 
-            display: 'flex', 
-            alignItems: 'center', 
-            justifyContent: 'space-between',
-            position: 'relative',
-            zIndex: 1
-          }}>
-            <div>
-              <h3 style={{ 
-                fontSize: '20px', 
-                fontWeight: '700', 
-                color: 'white',
-                marginBottom: '4px',
-                letterSpacing: '-0.5px'
-              }}>
-                Recent Activity
-              </h3>
-              <p style={{ 
-                fontSize: '14px', 
-                color: 'rgba(255,255,255,0.8)',
-                fontWeight: '400'
-              }}>
-                Live updates from your team
-              </p>
-            </div>
-            <button
-              onClick={handleRefresh}
-              style={{
-                padding: '12px',
-                background: 'rgba(255,255,255,0.15)',
-                backdropFilter: 'blur(10px)',
-                borderRadius: '12px',
-                border: '1px solid rgba(255,255,255,0.2)',
-                cursor: 'pointer',
-                transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
-                transform: isRefreshing ? 'rotate(360deg)' : 'rotate(0deg)',
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.background = 'rgba(255,255,255,0.25)';
-                e.currentTarget.style.transform = 'scale(1.1)';
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.background = 'rgba(255,255,255,0.15)';
-                e.currentTarget.style.transform = 'scale(1)';
-              }}
-              title="Refresh"
-            >
-              <svg style={{ width: '20px', height: '20px', color: 'white' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-              </svg>
-            </button>
-          </div>
-
-          {/* Filter Pills */}
-          <div style={{ 
-            display: 'flex', 
-            gap: '8px', 
-            marginTop: '20px', 
-            overflowX: 'auto',
-            paddingBottom: '8px',
-            position: 'relative',
-            zIndex: 1
-          }}>
-            {['all', 'User', 'Job', 'Invoice', 'Payment', 'Customer'].map((filterOption) => (
-              <FilterPill
-                key={filterOption}
-                active={filter === filterOption}
-                onClick={() => setFilter(filterOption)}
-                label={filterOption === 'all' ? 'All Activity' : filterOption}
-              />
-            ))}
-          </div>
-        </div>
-      )}
-
-      <div style={{ 
-        maxHeight,
-        overflowY: 'auto',
-        overflowX: 'hidden'
+    <>
+      <ActivityFeedStyles />
+      <div className="glass-card" style={{
+        borderRadius: 24, overflow: 'hidden',
+        transition: 'all 0.4s cubic-bezier(0.4,0,0.2,1)',
       }}>
-        {filteredActivities.length === 0 ? (
-          <EmptyState filter={filter} />
-        ) : (
-          <div>
-            {filteredActivities.map((activity, index) => (
-              <ActivityItem
-                key={activity.id}
-                activity={activity}
-                formatTimeAgo={formatTimeAgo}
-                index={index}
-                isHovered={hoveredItem === activity.id}
-                onHover={() => setHoveredItem(activity.id)}
-                onLeave={() => setHoveredItem(null)}
-              />
-            ))}
+        {showHeader && (
+          <div style={{
+            padding: '20px 24px',
+            borderBottom: '1px solid rgba(255,255,255,0.06)',
+            position: 'relative', overflow: 'hidden',
+          }}>
+            {/* Subtle gradient bar */}
+            <div style={{
+              position: 'absolute', top: 0, left: 0, right: 0, height: 2,
+              background: 'linear-gradient(90deg, #6366f1, #06b6d4, #6366f1)',
+              backgroundSize: '200% 100%',
+              animation: 'actGradientSlide 3s linear infinite',
+            }} />
+
+            <div style={{
+              display: 'flex', alignItems: 'center',
+              justifyContent: 'space-between',
+            }}>
+              <div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4 }}>
+                  <div style={{
+                    width: 8, height: 8, borderRadius: '50%',
+                    background: '#10b981',
+                    boxShadow: '0 0 8px rgba(16,185,129,0.5)',
+                  }}>
+                    <div style={{
+                      width: '100%', height: '100%', borderRadius: '50%',
+                      background: '#10b981',
+                      animation: 'actPing 2s ease infinite',
+                    }} />
+                  </div>
+                  <h3 style={{
+                    fontSize: 17, fontWeight: 700, color: 'white',
+                    margin: 0, letterSpacing: '-0.3px',
+                  }}>
+                    Recent Activity
+                  </h3>
+                </div>
+                <p style={{
+                  fontSize: 12, color: 'rgba(255,255,255,0.35)',
+                  fontWeight: 500, margin: 0,
+                }}>
+                  Live updates from your team
+                </p>
+              </div>
+              <button
+                onClick={handleRefresh}
+                className="act-refresh-btn"
+                style={{
+                  width: 38, height: 38, borderRadius: 10,
+                  background: 'rgba(255,255,255,0.05)',
+                  border: '1px solid rgba(255,255,255,0.08)',
+                  cursor: 'pointer',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  transition: 'all 0.3s',
+                }}
+              >
+                <svg style={{
+                  width: 16, height: 16, color: 'rgba(255,255,255,0.5)',
+                  transition: 'transform 0.6s ease',
+                  transform: isRefreshing ? 'rotate(360deg)' : 'rotate(0)',
+                }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                    d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                </svg>
+              </button>
+            </div>
+
+            {/* Filter chips */}
+            <div style={{
+              display: 'flex', gap: 6, marginTop: 16,
+              overflowX: 'auto', paddingBottom: 4,
+            }}>
+              {['all', 'User', 'Job', 'Invoice', 'Payment', 'Customer'].map(f => (
+                <button
+                  key={f}
+                  onClick={() => setFilter(f)}
+                  className="act-filter-chip"
+                  style={{
+                    padding: '5px 14px', fontSize: 11, fontWeight: 600,
+                    borderRadius: 20, whiteSpace: 'nowrap', cursor: 'pointer',
+                    transition: 'all 0.25s',
+                    background: filter === f ? 'rgba(99,102,241,0.25)' : 'rgba(255,255,255,0.04)',
+                    color: filter === f ? '#a5b4fc' : 'rgba(255,255,255,0.4)',
+                    border: `1px solid ${filter === f ? 'rgba(99,102,241,0.4)' : 'rgba(255,255,255,0.06)'}`,
+                  }}
+                >
+                  {f === 'all' ? 'All' : f}
+                </button>
+              ))}
+            </div>
           </div>
         )}
+
+        {/* Activities list */}
+        <div style={{ maxHeight, overflowY: 'auto', overflowX: 'hidden' }}>
+          {filtered.length === 0 ? (
+            <div style={{
+              textAlign: 'center', padding: '60px 24px',
+              animation: 'actScaleIn 0.5s ease',
+            }}>
+              <div style={{
+                width: 80, height: 80, borderRadius: 22,
+                background: 'rgba(99,102,241,0.1)',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                margin: '0 auto 20px', fontSize: 36,
+                animation: 'actFloat 3s ease-in-out infinite',
+              }}>
+                🕐
+              </div>
+              <h3 style={{ fontSize: 17, fontWeight: 700, color: 'white', marginBottom: 6 }}>
+                No recent activity
+              </h3>
+              <p style={{ color: 'rgba(255,255,255,0.35)', fontSize: 13, maxWidth: 250, margin: '0 auto' }}>
+                {filter !== 'all'
+                  ? 'Try a different filter'
+                  : 'Activity will appear as your team works'}
+              </p>
+            </div>
+          ) : (
+            filtered.map((a, i) => (
+              <ActivityRow
+                key={a.id}
+                activity={a}
+                timeAgo={timeAgo}
+                index={i}
+                isHovered={hoveredItem === a.id}
+                onHover={() => setHoveredItem(a.id)}
+                onLeave={() => setHoveredItem(null)}
+              />
+            ))
+          )}
+        </div>
       </div>
-
-      {/* Global styles for animations */}
-      <style jsx global>{`
-        @keyframes rotate {
-          from { transform: rotate(0deg); }
-          to { transform: rotate(360deg); }
-        }
-        
-        @keyframes fadeInUp {
-          from {
-            opacity: 0;
-            transform: translateY(20px);
-          }
-          to {
-            opacity: 1;
-            transform: translateY(0);
-          }
-        }
-
-        @keyframes pulse {
-          0%, 100% { opacity: 1; }
-          50% { opacity: 0.5; }
-        }
-
-        @keyframes shimmer {
-          0% { background-position: -1000px 0; }
-          100% { background-position: 1000px 0; }
-        }
-
-        @keyframes float {
-          0%, 100% { transform: translateY(0px); }
-          50% { transform: translateY(-10px); }
-        }
-
-        @keyframes scaleIn {
-          from {
-            opacity: 0;
-            transform: scale(0.9);
-          }
-          to {
-            opacity: 1;
-            transform: scale(1);
-          }
-        }
-      `}</style>
-    </div>
+    </>
   );
 }
 
-// Loading Spinner Component
-function LoadingSpinner() {
-  return (
-    <div style={{ 
-      width: '56px', 
-      height: '56px', 
-      margin: '0 auto',
-      position: 'relative'
-    }}>
-      {[0, 1, 2].map((i) => (
-        <div
-          key={i}
-          style={{
-            position: 'absolute',
-            width: '100%',
-            height: '100%',
-            borderRadius: '50%',
-            border: '3px solid rgba(255,255,255,0.3)',
-            borderTopColor: 'white',
-            animation: `rotate ${1.5 - i * 0.2}s linear infinite`,
-            animationDelay: `${i * 0.15}s`
-          }}
-        />
-      ))}
-    </div>
-  );
-}
-
-// Filter Pill Component
-function FilterPill({ active, onClick, label }) {
-  const [isHovered, setIsHovered] = useState(false);
-
-  return (
-    <button
-      onClick={onClick}
-      onMouseEnter={() => setIsHovered(true)}
-      onMouseLeave={() => setIsHovered(false)}
-      style={{
-        padding: '8px 20px',
-        fontSize: '13px',
-        fontWeight: '600',
-        borderRadius: '20px',
-        whiteSpace: 'nowrap',
-        cursor: 'pointer',
-        transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
-        background: active 
-          ? 'white'
-          : isHovered 
-            ? 'rgba(255,255,255,0.15)' 
-            : 'rgba(255,255,255,0.1)',
-        color: active ? '#667eea' : 'white',
-        border: active ? '2px solid white' : '2px solid rgba(255,255,255,0.2)',
-        transform: isHovered ? 'translateY(-2px) scale(1.05)' : 'translateY(0) scale(1)',
-        boxShadow: active 
-          ? '0 8px 16px rgba(255,255,255,0.3)' 
-          : isHovered 
-            ? '0 4px 12px rgba(255,255,255,0.2)' 
-            : 'none',
-      }}
-    >
-      {label}
-    </button>
-  );
-}
-
-// Empty State Component
-function EmptyState({ filter }) {
-  return (
-    <div style={{ 
-      textAlign: 'center', 
-      padding: '80px 24px',
-      animation: 'scaleIn 0.5s ease-out'
-    }}>
-      <div style={{
-        width: '120px',
-        height: '120px',
-        background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-        borderRadius: '30px',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        margin: '0 auto 24px',
-        boxShadow: '0 20px 40px rgba(102, 126, 234, 0.3)',
-        animation: 'float 3s ease-in-out infinite',
-        transform: 'rotate(-5deg)'
-      }}>
-        <svg style={{ width: '60px', height: '60px', color: 'white' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-        </svg>
-      </div>
-      <h3 style={{ 
-        fontSize: '22px', 
-        fontWeight: '700', 
-        color: '#1a202c',
-        marginBottom: '8px',
-        letterSpacing: '-0.5px'
-      }}>
-        No recent activity
-      </h3>
-      <p style={{ 
-        color: '#718096', 
-        fontSize: '15px',
-        maxWidth: '300px',
-        margin: '0 auto'
-      }}>
-        {filter !== 'all' ? 'Try changing the filter to see more activities' : 'Activity will appear here as your team works'}
-      </p>
-    </div>
-  );
-}
-
-// Activity Item Component
-function ActivityItem({ activity, formatTimeAgo, index, isHovered, onHover, onLeave }) {
+// ── Activity Row ──
+function ActivityRow({ activity, timeAgo, index, isHovered, onHover, onLeave }) {
   const icon = ActivityIcons[activity.action] || '📌';
   const colorClass = getActivityColor(activity.action);
-  
-  // Convert Tailwind classes to inline styles
-  const getColorStyles = (colorClass) => {
-    const colorMap = {
-      'bg-blue-100 text-blue-700': { background: '#dbeafe', color: '#1d4ed8' },
-      'bg-gray-100 text-gray-700': { background: '#f3f4f6', color: '#374151' },
-      'bg-green-100 text-green-700': { background: '#d1fae5', color: '#047857' },
-      'bg-yellow-100 text-yellow-700': { background: '#fef3c7', color: '#b45309' },
-      'bg-red-100 text-red-700': { background: '#fee2e2', color: '#b91c1c' },
-      'bg-purple-100 text-purple-700': { background: '#ede9fe', color: '#6d28d9' },
-      'bg-orange-100 text-orange-700': { background: '#ffedd5', color: '#c2410c' },
-    };
-    return colorMap[colorClass] || colorMap['bg-gray-100 text-gray-700'];
-  };
 
-  const iconStyles = getColorStyles(colorClass);
+  const colorMap = {
+    'bg-blue-100 text-blue-700': { bg: 'rgba(59,130,246,0.15)', color: '#93c5fd' },
+    'bg-green-100 text-green-700': { bg: 'rgba(16,185,129,0.15)', color: '#6ee7b7' },
+    'bg-yellow-100 text-yellow-700': { bg: 'rgba(245,158,11,0.15)', color: '#fcd34d' },
+    'bg-red-100 text-red-700': { bg: 'rgba(239,68,68,0.15)', color: '#fca5a5' },
+    'bg-purple-100 text-purple-700': { bg: 'rgba(139,92,246,0.15)', color: '#c4b5fd' },
+    'bg-orange-100 text-orange-700': { bg: 'rgba(249,115,22,0.15)', color: '#fdba74' },
+    'bg-gray-100 text-gray-700': { bg: 'rgba(148,163,184,0.15)', color: '#cbd5e1' },
+  };
+  const cs = colorMap[colorClass] || colorMap['bg-gray-100 text-gray-700'];
 
   return (
-    <div 
+    <div
       onMouseEnter={onHover}
       onMouseLeave={onLeave}
+      className="act-row"
       style={{
-        padding: '20px 24px',
-        borderBottom: '1px solid rgba(0,0,0,0.05)',
-        transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
-        background: isHovered 
-          ? 'linear-gradient(135deg, rgba(102, 126, 234, 0.03) 0%, rgba(118, 75, 162, 0.03) 100%)'
-          : 'white',
-        transform: isHovered ? 'translateX(8px)' : 'translateX(0)',
+        padding: '16px 24px',
+        borderBottom: '1px solid rgba(255,255,255,0.04)',
+        transition: 'all 0.25s cubic-bezier(0.4,0,0.2,1)',
+        background: isHovered ? 'rgba(255,255,255,0.03)' : 'transparent',
         cursor: 'pointer',
-        animation: `fadeInUp 0.5s ease-out ${index * 0.05}s backwards`,
         position: 'relative',
-        overflow: 'hidden'
+        animation: `actSlideUp 0.4s ease ${index * 0.04}s backwards`,
       }}
     >
-      {/* Hover gradient effect */}
+      {/* Hover bar */}
       <div style={{
-        position: 'absolute',
-        top: 0,
-        left: isHovered ? 0 : '-100%',
-        width: '4px',
-        height: '100%',
-        background: 'linear-gradient(180deg, #667eea 0%, #764ba2 100%)',
-        transition: 'left 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+        position: 'absolute', left: 0, top: '15%',
+        width: 3, height: '70%', borderRadius: '0 3px 3px 0',
+        background: cs.color,
+        opacity: isHovered ? 0.8 : 0,
+        transition: 'opacity 0.25s',
+        boxShadow: `0 0 6px ${cs.color}40`,
       }} />
 
-      <div style={{ display: 'flex', gap: '16px', position: 'relative', zIndex: 1 }}>
+      <div style={{ display: 'flex', gap: 14 }}>
         {/* Icon */}
         <div style={{
-          width: '48px',
-          height: '48px',
-          borderRadius: '16px',
-          ...iconStyles,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          fontSize: '20px',
-          flexShrink: 0,
-          transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
-          transform: isHovered ? 'scale(1.1) rotate(5deg)' : 'scale(1) rotate(0deg)',
-          boxShadow: isHovered ? '0 8px 16px rgba(0,0,0,0.1)' : '0 2px 4px rgba(0,0,0,0.05)',
+          width: 42, height: 42, borderRadius: 14,
+          background: cs.bg,
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          fontSize: 18, flexShrink: 0,
+          transition: 'all 0.25s',
+          transform: isHovered ? 'scale(1.08) rotate(4deg)' : 'scale(1) rotate(0)',
         }}>
           {icon}
         </div>
 
         {/* Content */}
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ 
-            display: 'flex', 
-            alignItems: 'flex-start', 
-            justifyContent: 'space-between',
-            gap: '12px',
-            flexWrap: 'wrap'
+          <div style={{
+            display: 'flex', alignItems: 'flex-start',
+            justifyContent: 'space-between', gap: 10,
+            flexWrap: 'wrap',
           }}>
             <div style={{ flex: 1, minWidth: 0 }}>
-              <p style={{ 
-                fontSize: '15px', 
-                color: '#1a202c',
-                lineHeight: '1.6',
-                marginBottom: '6px'
-              }}>
-                <span style={{ fontWeight: '700', color: '#667eea' }}>
-                  {activity.user?.name || 'Unknown User'}
+              <p style={{ fontSize: 13, color: 'white', lineHeight: 1.5, margin: '0 0 4px' }}>
+                <span style={{ fontWeight: 700, color: '#a5b4fc' }}>
+                  {activity.user?.name || 'Unknown'}
                 </span>
                 {' '}
-                <span style={{ color: '#4a5568' }}>
+                <span style={{ color: 'rgba(255,255,255,0.6)' }}>
                   {activity.description}
                 </span>
               </p>
-              
-              {/* Metadata */}
+
+              {/* Meta badges */}
               {activity.metadata && Object.keys(activity.metadata).length > 0 && (
-                <div style={{ 
-                  display: 'flex', 
-                  flexWrap: 'wrap',
-                  gap: '12px',
-                  marginTop: '8px'
-                }}>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 6 }}>
                   {activity.user?.branch?.name && (
-                    <MetadataBadge
-                      icon={
-                        <svg style={{ width: '12px', height: '12px' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
-                        </svg>
-                      }
-                      text={activity.user.branch.name}
-                    />
+                    <span style={{
+                      display: 'inline-flex', alignItems: 'center', gap: 4,
+                      padding: '2px 8px', borderRadius: 6,
+                      background: 'rgba(99,102,241,0.1)',
+                      fontSize: 10, fontWeight: 500, color: '#a5b4fc',
+                    }}>
+                      🏢 {activity.user.branch.name}
+                    </span>
                   )}
-                  <MetadataBadge
-                    icon={
-                      <svg style={{ width: '12px', height: '12px' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-                      </svg>
-                    }
-                    text={activity.user?.role?.replace('_', ' ')}
-                  />
+                  <span style={{
+                    display: 'inline-flex', alignItems: 'center', gap: 4,
+                    padding: '2px 8px', borderRadius: 6,
+                    background: 'rgba(255,255,255,0.05)',
+                    fontSize: 10, fontWeight: 500, color: 'rgba(255,255,255,0.35)',
+                  }}>
+                    👤 {activity.user?.role?.replace('_', ' ')}
+                  </span>
                 </div>
               )}
             </div>
 
-            {/* Time Badge */}
-            <div style={{
-              padding: '6px 14px',
-              background: isHovered ? 'rgba(102, 126, 234, 0.1)' : 'rgba(0,0,0,0.04)',
-              borderRadius: '12px',
-              fontSize: '13px',
-              fontWeight: '600',
-              color: isHovered ? '#667eea' : '#718096',
-              whiteSpace: 'nowrap',
-              transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+            {/* Time */}
+            <span style={{
+              padding: '4px 10px', borderRadius: 8,
+              background: isHovered ? 'rgba(99,102,241,0.12)' : 'rgba(255,255,255,0.04)',
+              fontSize: 11, fontWeight: 600,
+              color: isHovered ? '#a5b4fc' : 'rgba(255,255,255,0.3)',
+              whiteSpace: 'nowrap', transition: 'all 0.25s',
+              flexShrink: 0,
             }}>
-              {formatTimeAgo(activity.createdAt)}
-            </div>
+              {timeAgo(activity.createdAt)}
+            </span>
           </div>
         </div>
       </div>
@@ -526,22 +340,48 @@ function ActivityItem({ activity, formatTimeAgo, index, isHovered, onHover, onLe
   );
 }
 
-// Metadata Badge Component
-function MetadataBadge({ icon, text }) {
+function ActivityFeedStyles() {
   return (
-    <div style={{
-      display: 'inline-flex',
-      alignItems: 'center',
-      gap: '6px',
-      padding: '4px 10px',
-      background: 'rgba(102, 126, 234, 0.08)',
-      borderRadius: '8px',
-      fontSize: '12px',
-      fontWeight: '500',
-      color: '#667eea'
-    }}>
-      {icon}
-      <span>{text}</span>
-    </div>
+    <style jsx global>{`
+      @keyframes actGradientSlide {
+        0% { background-position: 0% 50%; }
+        100% { background-position: 200% 50%; }
+      }
+      @keyframes actPing {
+        0%, 100% { opacity: 1; transform: scale(1); }
+        50% { opacity: 0.5; transform: scale(1.8); }
+      }
+      @keyframes actSlideUp {
+        from { opacity: 0; transform: translateY(10px); }
+        to { opacity: 1; transform: translateY(0); }
+      }
+      @keyframes actScaleIn {
+        from { opacity: 0; transform: scale(0.92); }
+        to { opacity: 1; transform: scale(1); }
+      }
+      @keyframes actFloat {
+        0%, 100% { transform: translateY(0); }
+        50% { transform: translateY(-8px); }
+      }
+      @keyframes rotate {
+        from { transform: rotate(0deg); }
+        to { transform: rotate(360deg); }
+      }
+      .act-refresh-btn:hover {
+        background: rgba(255,255,255,0.1) !important;
+        border-color: rgba(255,255,255,0.15) !important;
+      }
+      .act-filter-chip:hover {
+        background: rgba(99,102,241,0.15) !important;
+        color: #a5b4fc !important;
+        border-color: rgba(99,102,241,0.3) !important;
+      }
+      .act-row:hover {
+        transform: translateX(4px);
+      }
+      @media (max-width: 640px) {
+        .act-row:hover { transform: none; }
+      }
+    `}</style>
   );
 }

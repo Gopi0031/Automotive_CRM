@@ -4,857 +4,538 @@
 import { useEffect, useState, useCallback } from 'react';
 import toast from 'react-hot-toast';
 
+const CSS = `
+  @keyframes pySlideUp { from{opacity:0;transform:translateY(14px)} to{opacity:1;transform:translateY(0)} }
+  @keyframes pyScaleIn { from{opacity:0;transform:scale(.94)} to{opacity:1;transform:scale(1)} }
+  @keyframes pyFadeIn  { from{opacity:0} to{opacity:1} }
+  @keyframes pySpin    { from{transform:rotate(0)} to{transform:rotate(360deg)} }
+  @keyframes pyFloat   { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-6px)} }
+
+  .py-glass{background:rgba(255,255,255,.04);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);border:1px solid rgba(255,255,255,.07);border-radius:18px;transition:all .3s cubic-bezier(.4,0,.2,1)}
+  .py-glass:hover{background:rgba(255,255,255,.06);border-color:rgba(255,255,255,.11)}
+  .py-stat:hover{transform:translateY(-4px);box-shadow:0 20px 48px rgba(0,0,0,.35)}
+  .py-stat:hover .py-stat-icon{transform:scale(1.12) rotate(6deg)}
+  .py-btn{transition:all .22s ease;cursor:pointer}
+  .py-btn:hover{transform:translateY(-1px)}
+  .py-row{transition:background .2s ease}
+  .py-row:hover{background:rgba(255,255,255,.04)!important}
+  .py-overlay{animation:pyFadeIn .25s ease}
+  .py-modal{animation:pyScaleIn .3s cubic-bezier(.4,0,.2,1)}
+  .py-input{background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1);border-radius:12px;padding:11px 14px;color:white;font-size:14px;width:100%;outline:none;transition:all .22s ease}
+  .py-input::placeholder{color:rgba(255,255,255,.28)}
+  .py-input:focus{border-color:rgba(139,92,246,.5);background:rgba(255,255,255,.07);box-shadow:0 0 0 3px rgba(139,92,246,.12)}
+  .py-select{background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1);border-radius:12px;padding:11px 14px;color:white;font-size:14px;width:100%;outline:none;appearance:none;cursor:pointer;transition:all .22s ease}
+  .py-select option{background:#1a1f35;color:white}
+  .py-select:focus{border-color:rgba(139,92,246,.5);box-shadow:0 0 0 3px rgba(139,92,246,.12)}
+  .py-label{display:block;font-size:11px;font-weight:700;color:rgba(255,255,255,.45);margin-bottom:6px;text-transform:uppercase;letter-spacing:.7px}
+  .py-search{background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.08);border-radius:12px;padding:10px 14px 10px 40px;color:white;font-size:14px;width:100%;outline:none;transition:all .22s ease}
+  .py-search::placeholder{color:rgba(255,255,255,.28)}
+  .py-search:focus{border-color:rgba(139,92,246,.4);background:rgba(255,255,255,.07);box-shadow:0 0 0 3px rgba(139,92,246,.1)}
+  input[type=number]::-webkit-inner-spin-button,input[type=number]::-webkit-outer-spin-button{-webkit-appearance:none;margin:0}
+  input[type=number]{-moz-appearance:textfield}
+  @media(max-width:768px){.py-stat:hover{transform:none}.py-stat:hover .py-stat-icon{transform:none}}
+`;
+
+const PAY_METHODS = [
+  { v: 'CASH', l: 'Cash', icon: '💵', c: '#10b981' },
+  { v: 'CARD', l: 'Card', icon: '💳', c: '#3b82f6' },
+  { v: 'BANK_TRANSFER', l: 'Bank Transfer', icon: '🏦', c: '#8b5cf6' },
+  { v: 'CHECK', l: 'Check', icon: '📄', c: '#6b7280' },
+  { v: 'MOBILE_MONEY', l: 'UPI/Mobile', icon: '📱', c: '#f59e0b' },
+];
+const getMethod = m => PAY_METHODS.find(p => p.v === m) || { l: m, icon: '💰', c: '#6b7280' };
+
 export default function PaymentsPage() {
   const [payments, setPayments] = useState([]);
   const [invoices, setInvoices] = useState([]);
   const [loading, setLoading] = useState(true);
   const [currentUser, setCurrentUser] = useState(null);
-  
-  // Modal states
+  const [isMobile, setIsMobile] = useState(false);
   const [showModal, setShowModal] = useState(false);
   const [showDetailModal, setShowDetailModal] = useState(false);
+  const [showVoidConfirm, setShowVoidConfirm] = useState(null);
   const [selectedPayment, setSelectedPayment] = useState(null);
   const [selectedInvoice, setSelectedInvoice] = useState(null);
   const [submitting, setSubmitting] = useState(false);
+  const [filters, setFilters] = useState({ search: '', method: '', startDate: '', endDate: '' });
+  const [formData, setFormData] = useState({ invoiceId: '', amount: '', method: 'CASH', reference: '', notes: '' });
+  const [stats, setStats] = useState({ totalCollected: 0, todayCollection: 0, weekCollection: 0, pendingInvoices: 0, paymentCount: 0 });
 
-  // Filters
-  const [filters, setFilters] = useState({
-    search: '',
-    method: '',
-    startDate: '',
-    endDate: '',
-  });
+  useEffect(() => { const c = () => setIsMobile(window.innerWidth < 768); c(); window.addEventListener('resize', c); return () => window.removeEventListener('resize', c); }, []);
+  useEffect(() => { const u = localStorage.getItem('user'); if (u) setCurrentUser(JSON.parse(u)); fetchInvoices(); }, []);
+  useEffect(() => { if (currentUser) fetchPayments(); }, [filters, currentUser]);
 
-  // Form data
-  const [formData, setFormData] = useState({
-    invoiceId: '',
-    amount: '',
-    method: 'CASH',
-    reference: '',
-    notes: '',
-  });
-
-  // Stats
-  const [stats, setStats] = useState({
-    totalCollected: 0,
-    todayCollection: 0,
-    weekCollection: 0,
-    pendingInvoices: 0,
-    paymentCount: 0,
-  });
-
-  useEffect(() => {
-    const userData = localStorage.getItem('user');
-    if (userData) {
-      setCurrentUser(JSON.parse(userData));
-    }
-    fetchInitialData();
-  }, []);
-
-  useEffect(() => {
-    if (currentUser) {
-      fetchPayments();
-    }
-  }, [filters, currentUser]);
-
-  const fetchInitialData = async () => {
+  const fetchInvoices = async () => {
     try {
-      const invoicesRes = await fetch('/api/invoices');
-      const invoicesData = await invoicesRes.json();
-
-      if (invoicesData.success) {
-        // Filter only unpaid/partially paid invoices
-        const unpaidInvoices = invoicesData.data?.filter(
-          i => i.status !== 'PAID' && i.status !== 'CANCELLED'
-        ) || [];
-        setInvoices(unpaidInvoices);
-      }
-    } catch (error) {
-      console.error('Error fetching invoices:', error);
-    }
+      const r = await fetch('/api/invoices'); const d = await r.json();
+      if (d.success) setInvoices((d.data || []).filter(i => i.status !== 'PAID' && i.status !== 'CANCELLED'));
+    } catch {}
   };
 
   const fetchPayments = useCallback(async () => {
     try {
       setLoading(true);
-      const params = new URLSearchParams();
-      if (filters.search) params.append('search', filters.search);
-      if (filters.method) params.append('method', filters.method);
-      if (filters.startDate) params.append('startDate', filters.startDate);
-      if (filters.endDate) params.append('endDate', filters.endDate);
-
-      const response = await fetch(`/api/payments?${params.toString()}`);
-      const data = await response.json();
-
-      if (data.success) {
-        setPayments(data.data || []);
-        calculateStats(data.data || []);
-      } else {
-        toast.error(data.message || 'Failed to load payments');
+      const p = new URLSearchParams();
+      if (filters.search) p.append('search', filters.search);
+      if (filters.method) p.append('method', filters.method);
+      if (filters.startDate) p.append('startDate', filters.startDate);
+      if (filters.endDate) p.append('endDate', filters.endDate);
+      const r = await fetch(`/api/payments?${p}`);
+      const d = await r.json();
+      if (d.success) {
+        setPayments(d.data || []);
+        const data = d.data || [];
+        const today = new Date(); today.setHours(0, 0, 0, 0);
+        const week = new Date(); week.setDate(week.getDate() - 7); week.setHours(0, 0, 0, 0);
+        setStats({
+          totalCollected: data.reduce((s, p) => s + (p.amount || 0), 0),
+          todayCollection: data.filter(p => new Date(p.createdAt) >= today).reduce((s, p) => s + (p.amount || 0), 0),
+          weekCollection: data.filter(p => new Date(p.createdAt) >= week).reduce((s, p) => s + (p.amount || 0), 0),
+          pendingInvoices: invoices.length,
+          paymentCount: data.length,
+        });
       }
-    } catch (error) {
-      console.error('Error fetching payments:', error);
-      toast.error('Failed to load payments');
-    } finally {
-      setLoading(false);
-    }
-  }, [filters]);
+    } catch { toast.error('Failed to load'); }
+    finally { setLoading(false); }
+  }, [filters, invoices.length]);
 
-  const calculateStats = (paymentsData) => {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    
-    const weekAgo = new Date();
-    weekAgo.setDate(weekAgo.getDate() - 7);
-    weekAgo.setHours(0, 0, 0, 0);
+  const resetForm = () => { setFormData({ invoiceId: '', amount: '', method: 'CASH', reference: '', notes: '' }); setSelectedInvoice(null); };
+  const openCreate = () => { resetForm(); fetchInvoices(); setShowModal(true); };
 
-    const totalCollected = paymentsData.reduce((sum, p) => sum + (p.amount || 0), 0);
-    const todayCollection = paymentsData
-      .filter(p => new Date(p.createdAt) >= today)
-      .reduce((sum, p) => sum + (p.amount || 0), 0);
-    const weekCollection = paymentsData
-      .filter(p => new Date(p.createdAt) >= weekAgo)
-      .reduce((sum, p) => sum + (p.amount || 0), 0);
-
-    setStats({
-      totalCollected,
-      todayCollection,
-      weekCollection,
-      pendingInvoices: invoices.length,
-      paymentCount: paymentsData.length,
-    });
+  const handleInvoiceSelect = id => {
+    const inv = invoices.find(i => i.id === id);
+    setSelectedInvoice(inv);
+    setFormData(p => ({ ...p, invoiceId: id, amount: inv ? (inv.total - inv.amountPaid).toFixed(2) : '' }));
   };
 
-  const handleFilterChange = (e) => {
-    const { name, value } = e.target;
-    setFilters(prev => ({ ...prev, [name]: value }));
+  const handleSubmit = async e => {
+    e.preventDefault(); setSubmitting(true);
+    try {
+      const r = await fetch('/api/payments', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ invoiceId: formData.invoiceId, amount: parseFloat(formData.amount) || 0, method: formData.method, reference: formData.reference || null, notes: formData.notes || null }),
+      });
+      const d = await r.json();
+      if (!r.ok) { toast.error(d.message || 'Failed'); return; }
+      toast.success(d.message || 'Payment processed!');
+      resetForm(); setShowModal(false); fetchPayments(); fetchInvoices();
+    } catch { toast.error('Error'); }
+    finally { setSubmitting(false); }
   };
 
-  const resetFilters = () => {
-    setFilters({
-      search: '',
-      method: '',
-      startDate: '',
-      endDate: '',
-    });
-  };
-
-  const handleChange = (e) => {
-    const { name, value } = e.target;
-    setFormData(prev => ({ ...prev, [name]: value }));
-  };
-
-  const resetForm = () => {
-    setFormData({
-      invoiceId: '',
-      amount: '',
-      method: 'CASH',
-      reference: '',
-      notes: '',
-    });
-    setSelectedInvoice(null);
-  };
-
-  const openCreateModal = () => {
-    resetForm();
-    fetchInitialData(); // Refresh available invoices
-    setShowModal(true);
-  };
-
-  const openDetailModal = (payment) => {
-    setSelectedPayment(payment);
-    setShowDetailModal(true);
-  };
-
-  // When invoice is selected, auto-fill remaining balance
-  const handleInvoiceSelect = (invoiceId) => {
-    const invoice = invoices.find(i => i.id === invoiceId);
-    setSelectedInvoice(invoice);
-    setFormData(prev => ({
-      ...prev,
-      invoiceId,
-      amount: invoice ? (invoice.total - invoice.amountPaid).toFixed(2) : '',
-    }));
-  };
-
-  const handleSubmit = async (e) => {
-    e.preventDefault();
+  const handleVoid = async payment => {
     setSubmitting(true);
-
     try {
-      const payload = {
-        invoiceId: formData.invoiceId,
-        amount: parseFloat(formData.amount) || 0,
-        method: formData.method,
-        reference: formData.reference || null,
-        notes: formData.notes || null,
-      };
-
-      console.log('📤 Sending payment data:', payload);
-
-      const response = await fetch('/api/payments', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        toast.error(data.message || 'Failed to process payment');
-        return;
-      }
-
-      toast.success(data.message || 'Payment processed successfully');
-      resetForm();
-      setShowModal(false);
-      fetchPayments();
-      fetchInitialData();
-    } catch (error) {
-      console.error('Error processing payment:', error);
-      toast.error('An error occurred');
-    } finally {
-      setSubmitting(false);
-    }
+      const r = await fetch(`/api/payments?id=${payment.id}`, { method: 'DELETE' });
+      const d = await r.json();
+      if (!r.ok) { toast.error(d.message || 'Failed'); return; }
+      toast.success('Payment voided');
+      setShowVoidConfirm(null); setShowDetailModal(false); fetchPayments(); fetchInvoices();
+    } catch { toast.error('Error'); }
+    finally { setSubmitting(false); }
   };
 
-  const handleVoidPayment = async (payment) => {
-    if (!confirm(`Are you sure you want to void this payment of ₹${payment.amount.toLocaleString('en-IN')}? This action cannot be undone.`)) {
-      return;
-    }
+  const canManage = ['SUPER_ADMIN', 'MANAGER', 'CASHIER'].includes(currentUser?.role);
 
-    try {
-      const response = await fetch(`/api/payments?id=${payment.id}`, {
-        method: 'DELETE',
-      });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        toast.error(data.message || 'Failed to void payment');
-        return;
-      }
-
-      toast.success('Payment voided successfully');
-      setShowDetailModal(false);
-      fetchPayments();
-      fetchInitialData();
-    } catch (error) {
-      console.error('Error voiding payment:', error);
-      toast.error('An error occurred');
-    }
-  };
-
-  // Payment method configuration
-  const paymentMethods = [
-    { value: 'CASH', label: 'Cash', icon: '💵', color: 'bg-green-100 text-green-800' },
-    { value: 'CARD', label: 'Card', icon: '💳', color: 'bg-blue-100 text-blue-800' },
-    { value: 'BANK_TRANSFER', label: 'Bank Transfer', icon: '🏦', color: 'bg-purple-100 text-purple-800' },
-    { value: 'CHECK', label: 'Check', icon: '📄', color: 'bg-gray-100 text-gray-800' },
-    { value: 'MOBILE_MONEY', label: 'UPI/Mobile', icon: '📱', color: 'bg-orange-100 text-orange-800' },
+  const STATS = [
+    { label: "Today's Collection", v: `₹${stats.todayCollection.toLocaleString('en-IN')}`, icon: '💰', grad: 'linear-gradient(135deg,#10b981,#059669)' },
+    { label: 'This Week', v: `₹${stats.weekCollection.toLocaleString('en-IN')}`, icon: '📊', grad: 'linear-gradient(135deg,#3b82f6,#1d4ed8)' },
+    { label: 'Total Collected', v: `₹${stats.totalCollected.toLocaleString('en-IN')}`, icon: '💎', grad: 'linear-gradient(135deg,#8b5cf6,#6d28d9)' },
+    { label: 'Pending Invoices', v: stats.pendingInvoices, icon: '📋', grad: 'linear-gradient(135deg,#f59e0b,#d97706)' },
   ];
 
-  const getMethodConfig = (method) => {
-    return paymentMethods.find(m => m.value === method) || { label: method, icon: '💰', color: 'bg-gray-100 text-gray-800' };
-  };
-
-  const canManagePayments = ['SUPER_ADMIN', 'MANAGER', 'CASHIER'].includes(currentUser?.role);
-
   return (
-    <div className="min-h-screen bg-gray-50">
-      {/* Header */}
-      <div className="bg-white border-b border-gray-200 sticky top-0 z-10">
-        <div className="px-4 sm:px-6 lg:px-8 py-4">
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+    <>
+      <style dangerouslySetInnerHTML={{ __html: CSS }} />
+
+      <div style={{ minHeight: '100vh' }}>
+        {/* HEADER */}
+        <div style={{ marginBottom: 24, animation: 'pySlideUp .5s ease' }}>
+          <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', flexWrap: 'wrap', gap: 14 }}>
             <div>
-              <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">Payments</h1>
-              <p className="text-gray-500 mt-1 text-sm sm:text-base">
-                Track and manage payment collections
-              </p>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4 }}>
+                <span style={{ fontSize: 26 }}>💳</span>
+                <h1 style={{ margin: 0, fontSize: 'clamp(1.3rem,4vw,1.7rem)', fontWeight: 800, color: 'white', letterSpacing: '-.5px' }}>Payments</h1>
+              </div>
+              <p style={{ margin: 0, fontSize: 13, color: 'rgba(255,255,255,.4)', fontWeight: 500 }}>Track and manage collections</p>
             </div>
-            {canManagePayments && (
-              <button
-                onClick={openCreateModal}
-                className="inline-flex items-center justify-center gap-2 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white px-4 sm:px-6 py-2.5 sm:py-3 rounded-xl font-semibold shadow-lg shadow-purple-500/25 transition-all duration-200"
-              >
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
-                </svg>
-                <span>Record Payment</span>
-              </button>
+            {canManage && (
+              <PBtn onClick={openCreate} label="Record Payment" icon="➕"
+                grad="linear-gradient(135deg,#8b5cf6,#6d28d9)" glow="rgba(139,92,246,.35)" full={isMobile} />
             )}
           </div>
         </div>
-      </div>
 
-      <div className="px-4 sm:px-6 lg:px-8 py-6">
-        {/* Stats Cards */}
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-          <div className="bg-white rounded-xl p-4 sm:p-5 shadow-sm border border-gray-100">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-xs sm:text-sm text-gray-500 font-medium">Today's Collection</p>
-                <p className="text-xl sm:text-2xl font-bold text-green-600 mt-1">
-                  ₹{stats.todayCollection.toLocaleString('en-IN')}
-                </p>
-              </div>
-              <div className="w-10 h-10 sm:w-12 sm:h-12 bg-green-100 rounded-xl flex items-center justify-center text-xl">
-                💰
+        {/* STATS */}
+        <div style={{ display: 'grid', gridTemplateColumns: `repeat(auto-fit,minmax(min(100%,${isMobile ? '140px' : '200px'}),1fr))`, gap: isMobile ? 10 : 14, marginBottom: 20 }}>
+          {STATS.map((s, i) => (
+            <div key={s.label} className="py-glass py-stat" style={{ padding: isMobile ? 14 : 'clamp(14px,2vw,20px)', animation: `pySlideUp .5s ease ${i * .08}s backwards`, cursor: 'default' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                <div style={{ minWidth: 0 }}>
+                  <p style={{ margin: 0, fontSize: 9.5, fontWeight: 700, color: 'rgba(255,255,255,.38)', textTransform: 'uppercase', letterSpacing: '.7px' }}>{s.label}</p>
+                  <p style={{ margin: '5px 0 0', fontSize: isMobile ? '1.1rem' : 'clamp(1.1rem,2.5vw,1.5rem)', fontWeight: 800, color: 'white', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.v}</p>
+                </div>
+                <div className="py-stat-icon" style={{ width: isMobile ? 42 : 48, height: isMobile ? 42 : 48, borderRadius: 13, background: s.grad, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: isMobile ? 20 : 22, flexShrink: 0, boxShadow: '0 6px 18px rgba(0,0,0,.25)', transition: 'transform .3s ease' }}>{s.icon}</div>
               </div>
             </div>
-          </div>
+          ))}
+        </div>
 
-          <div className="bg-white rounded-xl p-4 sm:p-5 shadow-sm border border-gray-100">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-xs sm:text-sm text-gray-500 font-medium">This Week</p>
-                <p className="text-xl sm:text-2xl font-bold text-blue-600 mt-1">
-                  ₹{stats.weekCollection.toLocaleString('en-IN')}
-                </p>
-              </div>
-              <div className="w-10 h-10 sm:w-12 sm:h-12 bg-blue-100 rounded-xl flex items-center justify-center text-xl">
-                📊
-              </div>
+        {/* FILTERS */}
+        <div className="py-glass" style={{ padding: isMobile ? 14 : 16, marginBottom: 20, animation: 'pySlideUp .5s ease .2s backwards' }}>
+          <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: 10, flexWrap: 'wrap' }}>
+            <div style={{ flex: 1, position: 'relative', minWidth: 0 }}>
+              <svg style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', width: 16, height: 16, color: 'rgba(255,255,255,.3)', pointerEvents: 'none' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+              </svg>
+              <input className="py-search" name="search" value={filters.search} onChange={e => setFilters(p => ({ ...p, search: e.target.value }))} placeholder="Search invoice # or customer..." />
             </div>
-          </div>
-
-          <div className="bg-white rounded-xl p-4 sm:p-5 shadow-sm border border-gray-100">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-xs sm:text-sm text-gray-500 font-medium">Total Collected</p>
-                <p className="text-xl sm:text-2xl font-bold text-purple-600 mt-1">
-                  ₹{stats.totalCollected.toLocaleString('en-IN')}
-                </p>
-              </div>
-              <div className="w-10 h-10 sm:w-12 sm:h-12 bg-purple-100 rounded-xl flex items-center justify-center text-xl">
-                💎
-              </div>
-            </div>
-          </div>
-
-          <div className="bg-white rounded-xl p-4 sm:p-5 shadow-sm border border-gray-100">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-xs sm:text-sm text-gray-500 font-medium">Pending Invoices</p>
-                <p className="text-2xl sm:text-3xl font-bold text-orange-600 mt-1">{stats.pendingInvoices}</p>
-              </div>
-              <div className="w-10 h-10 sm:w-12 sm:h-12 bg-orange-100 rounded-xl flex items-center justify-center text-xl">
-                📋
-              </div>
-            </div>
+            <select className="py-select" value={filters.method} onChange={e => setFilters(p => ({ ...p, method: e.target.value }))} style={{ minWidth: isMobile ? '100%' : 150 }}>
+              <option value="">All Methods</option>
+              {PAY_METHODS.map(m => <option key={m.v} value={m.v}>{m.icon} {m.l}</option>)}
+            </select>
+            <input className="py-input" type="date" value={filters.startDate} onChange={e => setFilters(p => ({ ...p, startDate: e.target.value }))} style={{ minWidth: isMobile ? '100%' : 'auto' }} />
+            <input className="py-input" type="date" value={filters.endDate} onChange={e => setFilters(p => ({ ...p, endDate: e.target.value }))} style={{ minWidth: isMobile ? '100%' : 'auto' }} />
+            {(filters.search || filters.method || filters.startDate || filters.endDate) && (
+              <button onClick={() => setFilters({ search: '', method: '', startDate: '', endDate: '' })} className="py-btn" style={{ padding: '10px 14px', borderRadius: 12, background: 'rgba(255,255,255,.04)', border: '1px solid rgba(255,255,255,.08)', color: 'rgba(255,255,255,.5)', fontSize: 13, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 6 }}>✕ Clear</button>
+            )}
           </div>
         </div>
 
-        {/* Filters */}
-        <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4 sm:p-6 mb-6">
-          <div className="flex flex-col lg:flex-row lg:items-center gap-4">
-            {/* Search */}
-            <div className="flex-1">
-              <div className="relative">
-                <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                </svg>
-                <input
-                  type="text"
-                  name="search"
-                  value={filters.search}
-                  onChange={handleFilterChange}
-                  placeholder="Search by invoice # or customer..."
-                  className="w-full pl-10 pr-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-all"
-                />
-              </div>
-            </div>
-
-            {/* Filter Dropdowns */}
-            <div className="flex flex-wrap gap-3">
-              <select
-                name="method"
-                value={filters.method}
-                onChange={handleFilterChange}
-                className="px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-purple-500 focus:border-purple-500 bg-white min-w-[150px]"
-              >
-                <option value="">All Methods</option>
-                {paymentMethods.map(method => (
-                  <option key={method.value} value={method.value}>
-                    {method.icon} {method.label}
-                  </option>
-                ))}
-              </select>
-
-              <input
-                type="date"
-                name="startDate"
-                value={filters.startDate}
-                onChange={handleFilterChange}
-                className="px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-purple-500 focus:border-purple-500 bg-white"
-              />
-
-              <input
-                type="date"
-                name="endDate"
-                value={filters.endDate}
-                onChange={handleFilterChange}
-                className="px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-purple-500 focus:border-purple-500 bg-white"
-              />
-
-              {(filters.search || filters.method || filters.startDate || filters.endDate) && (
-                <button
-                  onClick={resetFilters}
-                  className="px-4 py-2.5 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-xl transition-colors flex items-center gap-2"
-                >
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                  Clear
-                </button>
-              )}
-            </div>
-          </div>
-        </div>
-
-        {/* Payments List */}
+        {/* CONTENT */}
         {loading ? (
-          <div className="flex items-center justify-center py-20">
-            <div className="text-center">
-              <div className="w-16 h-16 border-4 border-purple-200 border-t-purple-600 rounded-full animate-spin mx-auto"></div>
-              <p className="text-gray-500 mt-4 font-medium">Loading payments...</p>
+          <div style={{ display: 'flex', justifyContent: 'center', padding: '80px 20px' }}>
+            <div style={{ textAlign: 'center' }}>
+              <div style={{ width: 44, height: 44, margin: '0 auto 14px', border: '3px solid rgba(255,255,255,.1)', borderTopColor: '#8b5cf6', borderRadius: '50%', animation: 'pySpin .8s linear infinite' }} />
+              <p style={{ color: 'rgba(255,255,255,.4)', fontSize: 14, fontWeight: 500 }}>Loading payments...</p>
             </div>
           </div>
         ) : payments.length === 0 ? (
-          <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-12 text-center">
-            <div className="w-20 h-20 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4 text-4xl">
-              💳
-            </div>
-            <h3 className="text-lg font-semibold text-gray-900 mb-2">No payments found</h3>
-            <p className="text-gray-500 mb-6">
-              {filters.search || filters.method || filters.startDate
-                ? 'Try adjusting your filters.'
-                : 'Record your first payment to get started.'}
+          <div className="py-glass" style={{ padding: '60px 24px', textAlign: 'center', animation: 'pyScaleIn .5s ease' }}>
+            <div style={{ width: 72, height: 72, borderRadius: 22, background: 'rgba(139,92,246,.12)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 20px', fontSize: 32, animation: 'pyFloat 3s ease-in-out infinite' }}>💳</div>
+            <h3 style={{ margin: '0 0 8px', fontSize: 18, fontWeight: 700, color: 'white' }}>No payments found</h3>
+            <p style={{ margin: '0 0 24px', fontSize: 14, color: 'rgba(255,255,255,.4)' }}>
+              {(filters.search || filters.method || filters.startDate) ? 'Try different filters' : 'Record your first payment'}
             </p>
-            {canManagePayments && !filters.search && !filters.method && !filters.startDate && (
-              <button
-                onClick={openCreateModal}
-                className="inline-flex items-center gap-2 bg-purple-600 hover:bg-purple-700 text-white px-6 py-3 rounded-xl font-semibold transition-colors"
-              >
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
-                </svg>
-                Record First Payment
-              </button>
+            {canManage && !(filters.search || filters.method || filters.startDate) && (
+              <PBtn onClick={openCreate} label="Record First Payment" grad="linear-gradient(135deg,#8b5cf6,#6d28d9)" glow="rgba(139,92,246,.35)" />
             )}
           </div>
         ) : (
           <>
-            {/* Desktop Table View */}
-            <div className="hidden lg:block bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
-              <div className="overflow-x-auto">
-                <table className="w-full">
-                  <thead className="bg-gray-50 border-b border-gray-100">
-                    <tr>
-                      <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Invoice</th>
-                      <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Customer</th>
-                      <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Amount</th>
-                      <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Method</th>
-                      <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Reference</th>
-                      <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Date & Time</th>
-                      <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Received By</th>
-                      <th className="px-6 py-4 text-right text-xs font-semibold text-gray-600 uppercase tracking-wider">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-100">
-                    {payments.map((payment) => {
-                      const methodConfig = getMethodConfig(payment.method);
-                      return (
-                        <tr key={payment.id} className="hover:bg-gray-50 transition-colors">
-                          <td className="px-6 py-4">
-                            <p className="font-semibold text-gray-900">{payment.invoice?.invoiceNumber}</p>
-                            <p className="text-xs text-gray-500">{payment.invoice?.job?.jobNumber}</p>
-                          </td>
-                          <td className="px-6 py-4">
-                            <p className="font-medium text-gray-900">{payment.invoice?.customer?.name}</p>
-                            <p className="text-sm text-gray-500">{payment.invoice?.customer?.phone}</p>
-                          </td>
-                          <td className="px-6 py-4">
-                            <p className="font-bold text-green-600 text-lg">
-                              ₹{payment.amount?.toLocaleString('en-IN')}
-                            </p>
-                          </td>
-                          <td className="px-6 py-4">
-                            <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold ${methodConfig.color}`}>
-                              <span>{methodConfig.icon}</span>
-                              {methodConfig.label}
-                            </span>
-                          </td>
-                          <td className="px-6 py-4 text-sm text-gray-600">
-                            {payment.reference || '—'}
-                          </td>
-                          <td className="px-6 py-4">
-                            <p className="text-sm text-gray-900">
-                              {new Date(payment.createdAt).toLocaleDateString('en-IN')}
-                            </p>
-                            <p className="text-xs text-gray-500">
-                              {new Date(payment.createdAt).toLocaleTimeString('en-IN', { 
-                                hour: '2-digit', 
-                                minute: '2-digit' 
-                              })}
-                            </p>
-                          </td>
-                          <td className="px-6 py-4">
-                            <p className="text-sm text-gray-900">{payment.receivedBy?.name}</p>
-                          </td>
-                          <td className="px-6 py-4">
-                            <div className="flex items-center justify-end gap-2">
-                              <button
-                                onClick={() => openDetailModal(payment)}
-                                className="p-2 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
-                                title="View Details"
-                              >
-                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-                                </svg>
-                              </button>
-                            </div>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
+            {/* Desktop Table */}
+            {!isMobile && (
+              <div className="py-glass" style={{ overflow: 'hidden', animation: 'pySlideUp .5s ease .3s backwards' }}>
+                <div style={{ overflowX: 'auto' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 850 }}>
+                    <thead>
+                      <tr>
+                        {['Invoice', 'Customer', 'Amount', 'Method', 'Reference', 'Date', 'Received By', 'Actions'].map(h => (
+                          <th key={h} style={{ padding: '13px 18px', textAlign: h === 'Actions' ? 'right' : 'left', fontSize: 10, fontWeight: 800, color: 'rgba(255,255,255,.3)', textTransform: 'uppercase', letterSpacing: '.8px', borderBottom: '1px solid rgba(255,255,255,.06)' }}>{h}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {payments.map((pay, i) => {
+                        const m = getMethod(pay.method);
+                        return (
+                          <tr key={pay.id} className="py-row" style={{ borderBottom: i < payments.length - 1 ? '1px solid rgba(255,255,255,.04)' : 'none', animation: `pySlideUp .35s ease ${i * .03}s backwards` }}>
+                            <td style={{ padding: '13px 18px' }}>
+                              <p style={{ margin: 0, fontWeight: 700, color: 'white', fontSize: 13 }}>{pay.invoice?.invoiceNumber}</p>
+                              <p style={{ margin: '1px 0 0', fontSize: 11, color: 'rgba(255,255,255,.35)' }}>{pay.invoice?.job?.jobNumber}</p>
+                            </td>
+                            <td style={{ padding: '13px 18px' }}>
+                              <p style={{ margin: 0, fontWeight: 600, color: 'white', fontSize: 13 }}>{pay.invoice?.customer?.name}</p>
+                              <p style={{ margin: '1px 0 0', fontSize: 11, color: 'rgba(255,255,255,.35)' }}>{pay.invoice?.customer?.phone}</p>
+                            </td>
+                            <td style={{ padding: '13px 18px' }}>
+                              <p style={{ margin: 0, fontWeight: 800, color: '#6ee7b7', fontSize: 16 }}>₹{pay.amount?.toLocaleString('en-IN')}</p>
+                            </td>
+                            <td style={{ padding: '13px 18px' }}>
+                              <span style={{ padding: '4px 10px', borderRadius: 10, background: `${m.c}15`, border: `1px solid ${m.c}25`, color: m.c, fontSize: 11, fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                                {m.icon} {m.l}
+                              </span>
+                            </td>
+                            <td style={{ padding: '13px 18px', fontSize: 13, color: 'rgba(255,255,255,.45)' }}>{pay.reference || '—'}</td>
+                            <td style={{ padding: '13px 18px' }}>
+                              <p style={{ margin: 0, fontSize: 13, color: 'white' }}>{new Date(pay.createdAt).toLocaleDateString('en-IN')}</p>
+                              <p style={{ margin: '1px 0 0', fontSize: 10, color: 'rgba(255,255,255,.3)' }}>{new Date(pay.createdAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}</p>
+                            </td>
+                            <td style={{ padding: '13px 18px', fontSize: 13, color: 'rgba(255,255,255,.5)' }}>{pay.receivedBy?.name}</td>
+                            <td style={{ padding: '13px 18px', textAlign: 'right' }}>
+                              <button onClick={() => { setSelectedPayment(pay); setShowDetailModal(true); }} className="py-btn" style={{ padding: '6px 14px', borderRadius: 8, background: 'rgba(59,130,246,.1)', border: '1px solid rgba(59,130,246,.2)', color: '#93c5fd', fontSize: 12, fontWeight: 700 }}>View</button>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
               </div>
-            </div>
+            )}
 
-            {/* Mobile Card View */}
-            <div className="lg:hidden space-y-4">
-              {payments.map((payment) => {
-                const methodConfig = getMethodConfig(payment.method);
-                return (
-                  <div key={payment.id} className="bg-white rounded-xl shadow-sm border border-gray-100 p-4">
-                    <div className="flex items-start justify-between mb-3">
-                      <div>
-                        <p className="font-bold text-gray-900">{payment.invoice?.invoiceNumber}</p>
-                        <p className="text-sm text-gray-500">{payment.invoice?.customer?.name}</p>
+            {/* Mobile Cards */}
+            {isMobile && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                {payments.map((pay, i) => {
+                  const m = getMethod(pay.method);
+                  return (
+                    <div key={pay.id} className="py-glass" onClick={() => { setSelectedPayment(pay); setShowDetailModal(true); }} style={{ padding: 16, cursor: 'pointer', animation: `pySlideUp .4s ease ${i * .03}s backwards` }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 10 }}>
+                        <div>
+                          <p style={{ margin: 0, fontWeight: 700, color: 'white', fontSize: 14 }}>{pay.invoice?.invoiceNumber}</p>
+                          <p style={{ margin: '2px 0 0', fontSize: 12, color: 'rgba(255,255,255,.4)' }}>{pay.invoice?.customer?.name}</p>
+                        </div>
+                        <span style={{ padding: '3px 9px', borderRadius: 8, background: `${m.c}15`, border: `1px solid ${m.c}25`, color: m.c, fontSize: 10, fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: 3 }}>{m.icon} {m.l}</span>
                       </div>
-                      <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold ${methodConfig.color}`}>
-                        {methodConfig.icon} {methodConfig.label}
-                      </span>
-                    </div>
-
-                    <div className="flex items-center justify-between mb-3">
-                      <p className="text-2xl font-bold text-green-600">
-                        ₹{payment.amount?.toLocaleString('en-IN')}
-                      </p>
-                      <div className="text-right text-sm text-gray-500">
-                        <p>{new Date(payment.createdAt).toLocaleDateString('en-IN')}</p>
-                        <p>{new Date(payment.createdAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}</p>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+                        <p style={{ margin: 0, fontWeight: 800, color: '#6ee7b7', fontSize: 22 }}>₹{pay.amount?.toLocaleString('en-IN')}</p>
+                        <div style={{ textAlign: 'right' }}>
+                          <p style={{ margin: 0, fontSize: 12, color: 'rgba(255,255,255,.45)' }}>{new Date(pay.createdAt).toLocaleDateString('en-IN')}</p>
+                          <p style={{ margin: 0, fontSize: 10, color: 'rgba(255,255,255,.3)' }}>{new Date(pay.createdAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}</p>
+                        </div>
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingTop: 10, borderTop: '1px solid rgba(255,255,255,.05)' }}>
+                        <span style={{ fontSize: 12, color: 'rgba(255,255,255,.35)' }}>By: {pay.receivedBy?.name}</span>
+                        <span style={{ color: '#93c5fd', fontWeight: 600, fontSize: 12 }}>Details →</span>
                       </div>
                     </div>
-
-                    {payment.reference && (
-                      <p className="text-sm text-gray-600 mb-3">
-                        <span className="text-gray-400">Ref:</span> {payment.reference}
-                      </p>
-                    )}
-
-                    <div className="flex items-center justify-between pt-3 border-t border-gray-100">
-                      <p className="text-sm text-gray-500">
-                        By: {payment.receivedBy?.name}
-                      </p>
-                      <button
-                        onClick={() => openDetailModal(payment)}
-                        className="text-blue-600 font-medium text-sm"
-                      >
-                        View Details →
-                      </button>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
+                  );
+                })}
+              </div>
+            )}
           </>
         )}
       </div>
 
-      {/* Record Payment Modal */}
+      {/* RECORD PAYMENT MODAL */}
       {showModal && (
-        <div 
-          className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4"
-          onClick={() => setShowModal(false)}
-        >
-          <div 
-            className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-hidden"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="px-6 py-4 border-b border-gray-100 bg-gradient-to-r from-purple-600 to-indigo-600">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h2 className="text-xl font-bold text-white">Record Payment</h2>
-                  <p className="text-purple-100 text-sm mt-0.5">Process a new payment</p>
-                </div>
-                <button
-                  onClick={() => setShowModal(false)}
-                  className="p-2 hover:bg-white/10 rounded-lg transition-colors"
-                >
-                  <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                </button>
-              </div>
-            </div>
-
-            <form onSubmit={handleSubmit} className="p-6 overflow-y-auto max-h-[calc(90vh-180px)]">
-              <div className="space-y-5">
-                {/* Invoice Selection */}
-                <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-2">
-                    Select Invoice <span className="text-red-500">*</span>
-                  </label>
-                  <select
-                    name="invoiceId"
-                    value={formData.invoiceId}
-                    onChange={(e) => handleInvoiceSelect(e.target.value)}
-                    className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-purple-500 focus:border-purple-500 bg-white"
-                    required
-                  >
-                    <option value="">Select an invoice</option>
-                    {invoices.map((inv) => (
-                      <option key={inv.id} value={inv.id}>
-                        {inv.invoiceNumber} - {inv.customer?.name} - Balance: ₹{(inv.total - inv.amountPaid).toLocaleString('en-IN')}
-                      </option>
+        <POvl onClose={() => setShowModal(false)}>
+          <div style={{ maxWidth: 520, width: '100%' }}>
+            <PMHead title="Record Payment" sub="Process a new payment" onClose={() => setShowModal(false)} />
+            <form onSubmit={handleSubmit} style={{ padding: isMobile ? 20 : 24, background: 'rgba(15,23,42,.97)', borderRadius: '0 0 20px 20px', border: '1px solid rgba(255,255,255,.06)', borderTop: 'none' }}>
+              <div style={{ maxHeight: 'calc(72vh - 200px)', overflowY: 'auto', paddingRight: 4 }}>
+                <div style={{ marginBottom: 16 }}>
+                  <label className="py-label">Select Invoice <span style={{ color: '#8b5cf6' }}>*</span></label>
+                  <select className="py-select" value={formData.invoiceId} onChange={e => handleInvoiceSelect(e.target.value)} required>
+                    <option value="">Select invoice...</option>
+                    {invoices.map(inv => (
+                      <option key={inv.id} value={inv.id}>{inv.invoiceNumber} - {inv.customer?.name} - Balance: ₹{(inv.total - inv.amountPaid).toLocaleString('en-IN')}</option>
                     ))}
                   </select>
-                  {invoices.length === 0 && (
-                    <p className="text-sm text-yellow-600 mt-2">
-                      No pending invoices available.
-                    </p>
-                  )}
+                  {!invoices.length && <p style={{ margin: '6px 0 0', fontSize: 11, color: '#fcd34d' }}>No pending invoices</p>}
                 </div>
 
-                {/* Selected Invoice Details */}
                 {selectedInvoice && (
-                  <div className="bg-gray-50 rounded-xl p-4">
-                    <h4 className="font-semibold text-gray-900 mb-2">Invoice Details</h4>
-                    <div className="grid grid-cols-2 gap-3 text-sm">
-                      <div>
-                        <p className="text-gray-500">Customer</p>
-                        <p className="font-medium">{selectedInvoice.customer?.name}</p>
-                      </div>
-                      <div>
-                        <p className="text-gray-500">Invoice Total</p>
-                        <p className="font-medium">₹{selectedInvoice.total?.toLocaleString('en-IN')}</p>
-                      </div>
-                      <div>
-                        <p className="text-gray-500">Already Paid</p>
-                        <p className="font-medium text-green-600">₹{selectedInvoice.amountPaid?.toLocaleString('en-IN')}</p>
-                      </div>
-                      <div>
-                        <p className="text-gray-500">Balance Due</p>
-                        <p className="font-bold text-red-600">₹{(selectedInvoice.total - selectedInvoice.amountPaid).toLocaleString('en-IN')}</p>
-                      </div>
+                  <div style={{ padding: 14, borderRadius: 12, background: 'rgba(255,255,255,.03)', border: '1px solid rgba(255,255,255,.06)', marginBottom: 16 }}>
+                    <p style={{ margin: '0 0 8px', fontSize: 12, fontWeight: 700, color: 'rgba(255,255,255,.5)' }}>Invoice Details</p>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                      {[
+                        { l: 'Customer', v: selectedInvoice.customer?.name },
+                        { l: 'Total', v: `₹${selectedInvoice.total?.toLocaleString('en-IN')}` },
+                        { l: 'Paid', v: `₹${selectedInvoice.amountPaid?.toLocaleString('en-IN')}`, c: '#6ee7b7' },
+                        { l: 'Balance', v: `₹${(selectedInvoice.total - selectedInvoice.amountPaid).toLocaleString('en-IN')}`, c: '#fca5a5' },
+                      ].map(d => (
+                        <div key={d.l}>
+                          <p style={{ margin: '0 0 2px', fontSize: 10, color: 'rgba(255,255,255,.35)' }}>{d.l}</p>
+                          <p style={{ margin: 0, fontWeight: 700, color: d.c || 'white', fontSize: 13 }}>{d.v}</p>
+                        </div>
+                      ))}
                     </div>
                   </div>
                 )}
 
-                {/* Amount */}
-                <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-2">
-                    Payment Amount (₹) <span className="text-red-500">*</span>
-                  </label>
-                  <input
-                    type="number"
-                    name="amount"
-                    value={formData.amount}
-                    onChange={handleChange}
-                    className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
-                    placeholder="0.00"
-                    step="0.01"
-                    min="0.01"
-                    max={selectedInvoice ? (selectedInvoice.total - selectedInvoice.amountPaid) : undefined}
-                    required
-                  />
+                <div style={{ marginBottom: 16 }}>
+                  <label className="py-label">Amount (₹) <span style={{ color: '#8b5cf6' }}>*</span></label>
+                  <input className="py-input" type="number" name="amount" value={formData.amount}
+                    onChange={e => setFormData(p => ({ ...p, amount: e.target.value }))}
+                    placeholder="0.00" step="0.01" min="0.01"
+                    max={selectedInvoice ? (selectedInvoice.total - selectedInvoice.amountPaid) : undefined} required
+                    style={{ fontSize: 18, fontWeight: 700 }} />
                 </div>
 
-                {/* Payment Method */}
-                <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-2">
-                    Payment Method <span className="text-red-500">*</span>
-                  </label>
-                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                    {paymentMethods.map((method) => (
-                      <label
-                        key={method.value}
-                        className={`flex items-center gap-2 p-3 border-2 rounded-xl cursor-pointer transition-all ${
-                          formData.method === method.value
-                            ? 'border-purple-500 bg-purple-50'
-                            : 'border-gray-200 hover:border-gray-300'
-                        }`}
-                      >
-                        <input
-                          type="radio"
-                          name="method"
-                          value={method.value}
-                          checked={formData.method === method.value}
-                          onChange={handleChange}
-                          className="sr-only"
-                        />
-                        <span className="text-lg">{method.icon}</span>
-                        <span className="text-sm font-medium">{method.label}</span>
+                <div style={{ marginBottom: 16 }}>
+                  <label className="py-label">Payment Method <span style={{ color: '#8b5cf6' }}>*</span></label>
+                  <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr 1fr' : 'repeat(3,1fr)', gap: 8 }}>
+                    {PAY_METHODS.map(m => (
+                      <label key={m.v} style={{
+                        display: 'flex', alignItems: 'center', gap: 8, padding: '10px 12px', borderRadius: 11, cursor: 'pointer',
+                        background: formData.method === m.v ? `${m.c}12` : 'rgba(255,255,255,.03)',
+                        border: `1.5px solid ${formData.method === m.v ? `${m.c}40` : 'rgba(255,255,255,.07)'}`, transition: 'all .2s',
+                      }}>
+                        <input type="radio" name="method" value={m.v} checked={formData.method === m.v}
+                          onChange={e => setFormData(p => ({ ...p, method: e.target.value }))} style={{ display: 'none' }} />
+                        <span style={{ fontSize: 16 }}>{m.icon}</span>
+                        <span style={{ fontSize: 12, fontWeight: 700, color: formData.method === m.v ? m.c : 'rgba(255,255,255,.45)' }}>{m.l}</span>
                       </label>
                     ))}
                   </div>
                 </div>
 
-                {/* Reference */}
-                <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-2">
-                    Reference / Transaction ID
-                  </label>
-                  <input
-                    type="text"
-                    name="reference"
-                    value={formData.reference}
-                    onChange={handleChange}
-                    className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
-                    placeholder="e.g., UPI ID, Check number, Card last 4 digits"
-                  />
+                <div style={{ marginBottom: 16 }}>
+                  <label className="py-label">Reference / Transaction ID</label>
+                  <input className="py-input" value={formData.reference}
+                    onChange={e => setFormData(p => ({ ...p, reference: e.target.value }))}
+                    placeholder="UPI ID, Check #, Card last 4..." />
                 </div>
 
-                {/* Notes */}
                 <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-2">
-                    Notes
-                  </label>
-                  <textarea
-                    name="notes"
-                    value={formData.notes}
-                    onChange={handleChange}
-                    rows={2}
-                    className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-purple-500 focus:border-purple-500 resize-none"
-                    placeholder="Optional notes..."
-                  />
+                  <label className="py-label">Notes</label>
+                  <textarea className="py-input" value={formData.notes}
+                    onChange={e => setFormData(p => ({ ...p, notes: e.target.value }))}
+                    rows={2} placeholder="Optional notes..." style={{ resize: 'none' }} />
                 </div>
               </div>
 
-              <div className="flex gap-3 justify-end mt-6 pt-4 border-t border-gray-100">
-                <button
-                  type="button"
-                  onClick={() => setShowModal(false)}
-                  className="px-5 py-2.5 border border-gray-200 rounded-xl text-gray-700 hover:bg-gray-50 font-medium transition-colors"
-                  disabled={submitting}
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="px-5 py-2.5 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white rounded-xl font-medium transition-all flex items-center gap-2 disabled:opacity-50"
-                  disabled={submitting || invoices.length === 0}
-                >
-                  {submitting && (
-                    <svg className="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                    </svg>
-                  )}
+              <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 22, paddingTop: 18, borderTop: '1px solid rgba(255,255,255,.06)' }}>
+                <PBtn onClick={() => setShowModal(false)} label="Cancel" outline color="rgba(255,255,255,.4)" disabled={submitting} />
+                <button type="submit" disabled={submitting || !invoices.length} className="py-btn" style={{
+                  padding: '10px 22px', borderRadius: 12, background: 'linear-gradient(135deg,#8b5cf6,#6d28d9)',
+                  border: 'none', color: 'white', fontSize: 13, fontWeight: 700,
+                  opacity: (submitting || !invoices.length) ? .5 : 1,
+                  display: 'flex', alignItems: 'center', gap: 8,
+                  boxShadow: '0 4px 14px rgba(139,92,246,.3)',
+                }}>
+                  {submitting && <PSpin />}
                   Process Payment
                 </button>
               </div>
             </form>
           </div>
-        </div>
+        </POvl>
       )}
 
-      {/* Payment Detail Modal */}
+      {/* DETAIL MODAL */}
       {showDetailModal && selectedPayment && (
-        <div 
-          className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4"
-          onClick={() => setShowDetailModal(false)}
-        >
-          <div 
-            className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="px-6 py-4 border-b border-gray-100 bg-gradient-to-r from-green-600 to-emerald-600">
-              <div className="flex items-center justify-between">
+        <POvl onClose={() => { setShowDetailModal(false); setSelectedPayment(null); }}>
+          <div style={{ maxWidth: 440, width: '100%' }}>
+            <div style={{ padding: '20px 22px', background: 'linear-gradient(135deg,#10b981,#059669)', borderRadius: '20px 20px 0 0', position: 'relative', overflow: 'hidden' }}>
+              <div style={{ position: 'absolute', top: -30, right: -30, width: 80, height: 80, borderRadius: '50%', background: 'rgba(255,255,255,.1)', pointerEvents: 'none' }} />
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', position: 'relative', zIndex: 1 }}>
                 <div>
-                  <h2 className="text-xl font-bold text-white">Payment Details</h2>
-                  <p className="text-green-100 text-sm mt-0.5">
-                    {new Date(selectedPayment.createdAt).toLocaleString('en-IN')}
-                  </p>
+                  <h2 style={{ margin: 0, fontSize: 17, fontWeight: 800, color: 'white' }}>Payment Details</h2>
+                  <p style={{ margin: '3px 0 0', fontSize: 12, color: 'rgba(255,255,255,.7)' }}>{new Date(selectedPayment.createdAt).toLocaleString('en-IN')}</p>
                 </div>
-                <button
-                  onClick={() => setShowDetailModal(false)}
-                  className="p-2 hover:bg-white/10 rounded-lg transition-colors"
-                >
-                  <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                </button>
+                <PClose onClick={() => { setShowDetailModal(false); setSelectedPayment(null); }} />
               </div>
             </div>
 
-            <div className="p-6">
-              {/* Amount */}
-              <div className="text-center mb-6">
-                <p className="text-4xl font-bold text-green-600">
-                  ₹{selectedPayment.amount?.toLocaleString('en-IN')}
-                </p>
-                <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-sm font-semibold mt-2 ${getMethodConfig(selectedPayment.method).color}`}>
-                  {getMethodConfig(selectedPayment.method).icon} {getMethodConfig(selectedPayment.method).label}
-                </span>
+            <div style={{ padding: isMobile ? 20 : 24, background: 'rgba(15,23,42,.97)', borderRadius: '0 0 20px 20px', border: '1px solid rgba(255,255,255,.06)', borderTop: 'none' }}>
+              <div style={{ textAlign: 'center', marginBottom: 20 }}>
+                <p style={{ margin: '0 0 6px', fontSize: 32, fontWeight: 800, color: '#6ee7b7' }}>₹{selectedPayment.amount?.toLocaleString('en-IN')}</p>
+                {(() => { const m = getMethod(selectedPayment.method); return (
+                  <span style={{ padding: '4px 12px', borderRadius: 10, background: `${m.c}15`, border: `1px solid ${m.c}25`, color: m.c, fontSize: 12, fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: 4 }}>{m.icon} {m.l}</span>
+                ); })()}
               </div>
 
-              {/* Details */}
-              <div className="space-y-4">
-                <div className="flex justify-between py-2 border-b border-gray-100">
-                  <span className="text-gray-500">Invoice</span>
-                  <span className="font-medium">{selectedPayment.invoice?.invoiceNumber}</span>
-                </div>
-                <div className="flex justify-between py-2 border-b border-gray-100">
-                  <span className="text-gray-500">Customer</span>
-                  <span className="font-medium">{selectedPayment.invoice?.customer?.name}</span>
-                </div>
-                <div className="flex justify-between py-2 border-b border-gray-100">
-                  <span className="text-gray-500">Phone</span>
-                  <span className="font-medium">{selectedPayment.invoice?.customer?.phone}</span>
-                </div>
-                {selectedPayment.reference && (
-                  <div className="flex justify-between py-2 border-b border-gray-100">
-                    <span className="text-gray-500">Reference</span>
-                    <span className="font-medium">{selectedPayment.reference}</span>
+              <div style={{ borderRadius: 12, overflow: 'hidden', border: '1px solid rgba(255,255,255,.06)' }}>
+                {[
+                  { l: 'Invoice', v: selectedPayment.invoice?.invoiceNumber },
+                  { l: 'Customer', v: selectedPayment.invoice?.customer?.name },
+                  { l: 'Phone', v: selectedPayment.invoice?.customer?.phone },
+                  ...(selectedPayment.reference ? [{ l: 'Reference', v: selectedPayment.reference }] : []),
+                  { l: 'Received By', v: selectedPayment.receivedBy?.name },
+                ].map((r, i, arr) => (
+                  <div key={r.l} style={{ display: 'flex', justifyContent: 'space-between', padding: '10px 14px', borderBottom: i < arr.length - 1 ? '1px solid rgba(255,255,255,.05)' : 'none', background: 'rgba(255,255,255,.02)' }}>
+                    <span style={{ fontSize: 12, color: 'rgba(255,255,255,.4)' }}>{r.l}</span>
+                    <span style={{ fontSize: 13, fontWeight: 700, color: 'white' }}>{r.v || '—'}</span>
                   </div>
-                )}
-                <div className="flex justify-between py-2 border-b border-gray-100">
-                  <span className="text-gray-500">Received By</span>
-                  <span className="font-medium">{selectedPayment.receivedBy?.name}</span>
-                </div>
-                {selectedPayment.notes && (
-                  <div className="py-2">
-                    <p className="text-gray-500 mb-1">Notes</p>
-                    <p className="text-gray-700 bg-gray-50 rounded-lg p-3">{selectedPayment.notes}</p>
-                  </div>
-                )}
+                ))}
               </div>
-            </div>
 
-            <div className="px-6 py-4 border-t border-gray-100 flex gap-3 justify-end">
-              <button
-                onClick={() => setShowDetailModal(false)}
-                className="px-5 py-2.5 border border-gray-200 rounded-xl text-gray-700 hover:bg-gray-50 font-medium transition-colors"
-              >
-                Close
-              </button>
-              {currentUser?.role === 'SUPER_ADMIN' && (
-                <button
-                  onClick={() => handleVoidPayment(selectedPayment)}
-                  className="px-5 py-2.5 bg-red-600 hover:bg-red-700 text-white rounded-xl font-medium transition-colors"
-                >
-                  Void Payment
-                </button>
+              {selectedPayment.notes && (
+                <div style={{ marginTop: 14, padding: 12, borderRadius: 12, background: 'rgba(255,255,255,.03)', border: '1px solid rgba(255,255,255,.05)' }}>
+                  <p style={{ margin: '0 0 3px', fontSize: 10, color: 'rgba(255,255,255,.35)', fontWeight: 600 }}>Notes</p>
+                  <p style={{ margin: 0, fontSize: 13, color: 'rgba(255,255,255,.6)' }}>{selectedPayment.notes}</p>
+                </div>
               )}
+
+              <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 20, paddingTop: 16, borderTop: '1px solid rgba(255,255,255,.06)' }}>
+                <PBtn onClick={() => { setShowDetailModal(false); setSelectedPayment(null); }} label="Close" outline color="rgba(255,255,255,.4)" />
+                {currentUser?.role === 'SUPER_ADMIN' && (
+                  <PBtn onClick={() => setShowVoidConfirm(selectedPayment)} label="Void Payment"
+                    grad="linear-gradient(135deg,#ef4444,#dc2626)" glow="rgba(239,68,68,.3)" />
+                )}
+              </div>
             </div>
           </div>
-        </div>
+        </POvl>
       )}
+
+      {/* VOID CONFIRM */}
+      {showVoidConfirm && (
+        <POvl onClose={() => setShowVoidConfirm(null)}>
+          <div style={{ maxWidth: 380, width: '100%', background: 'rgba(15,23,42,.97)', borderRadius: 20, border: '1px solid rgba(255,255,255,.06)', padding: 28, textAlign: 'center' }}>
+            <div style={{ width: 56, height: 56, borderRadius: '50%', background: 'rgba(239,68,68,.12)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px', fontSize: 26 }}>⚠️</div>
+            <h3 style={{ margin: '0 0 6px', fontSize: 17, fontWeight: 800, color: 'white' }}>Void Payment?</h3>
+            <p style={{ margin: '0 0 20px', fontSize: 13, color: 'rgba(255,255,255,.45)' }}>
+              Void <span style={{ color: '#6ee7b7', fontWeight: 700 }}>₹{showVoidConfirm.amount?.toLocaleString('en-IN')}</span>? This cannot be undone.
+            </p>
+            <div style={{ display: 'flex', gap: 10 }}>
+              <PBtn onClick={() => setShowVoidConfirm(null)} label="Cancel" outline color="rgba(255,255,255,.4)" style={{ flex: 1 }} />
+              <button onClick={() => handleVoid(showVoidConfirm)} disabled={submitting} className="py-btn" style={{
+                flex: 1, padding: '10px 0', borderRadius: 12, background: 'linear-gradient(135deg,#ef4444,#dc2626)',
+                border: 'none', color: 'white', fontSize: 13, fontWeight: 700, opacity: submitting ? .6 : 1,
+                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+              }}>
+                {submitting && <PSpin />}Void Payment
+              </button>
+            </div>
+          </div>
+        </POvl>
+      )}
+    </>
+  );
+}
+
+// ─── SHARED ───
+function POvl({ children, onClose }) {
+  return (
+    <div className="py-overlay" onClick={onClose} style={{ position: 'fixed', inset: 0, zIndex: 100, background: 'rgba(0,0,0,.65)', backdropFilter: 'blur(8px)', WebkitBackdropFilter: 'blur(8px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+      <div className="py-modal" onClick={e => e.stopPropagation()}>{children}</div>
     </div>
   );
+}
+
+function PMHead({ title, sub, onClose }) {
+  return (
+    <div style={{ padding: '18px 22px', background: 'linear-gradient(135deg,#8b5cf6,#6d28d9)', borderRadius: '20px 20px 0 0', position: 'relative', overflow: 'hidden' }}>
+      <div style={{ position: 'absolute', top: -30, right: -30, width: 80, height: 80, borderRadius: '50%', background: 'rgba(255,255,255,.1)', pointerEvents: 'none' }} />
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', position: 'relative', zIndex: 1 }}>
+        <div>
+          <h2 style={{ margin: 0, fontSize: 17, fontWeight: 800, color: 'white' }}>{title}</h2>
+          <p style={{ margin: '3px 0 0', fontSize: 12, color: 'rgba(255,255,255,.7)' }}>{sub}</p>
+        </div>
+        <PClose onClick={onClose} />
+      </div>
+    </div>
+  );
+}
+
+function PBtn({ onClick, label, icon, grad, glow, outline, color, disabled, full, style = {} }) {
+  return (
+    <button onClick={onClick} disabled={disabled} className="py-btn" style={{
+      padding: '10px 20px', borderRadius: 12, fontSize: 13, fontWeight: 700,
+      background: outline ? 'transparent' : (grad || 'rgba(255,255,255,.06)'),
+      border: outline ? `1px solid ${color || 'rgba(255,255,255,.15)'}` : 'none',
+      color: outline ? (color || 'rgba(255,255,255,.6)') : 'white',
+      boxShadow: glow ? `0 4px 14px ${glow}` : 'none',
+      opacity: disabled ? .5 : 1, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+      width: full ? '100%' : 'auto', ...style,
+    }}>{icon && <span>{icon}</span>}{label}</button>
+  );
+}
+
+function PClose({ onClick }) {
+  return (
+    <button onClick={onClick} style={{ width: 30, height: 30, borderRadius: 9, background: 'rgba(255,255,255,.14)', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+      <svg style={{ width: 15, height: 15, color: 'white' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M6 18L18 6M6 6l12 12" />
+      </svg>
+    </button>
+  );
+}
+
+function PSpin() {
+  return <div style={{ width: 15, height: 15, border: '2px solid rgba(255,255,255,.2)', borderTopColor: 'white', borderRadius: '50%', animation: 'pySpin .6s linear infinite', flexShrink: 0 }} />;
 }

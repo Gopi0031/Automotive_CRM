@@ -4,1154 +4,390 @@
 import { useEffect, useState, useCallback } from 'react';
 import toast from 'react-hot-toast';
 
+const CSS = `
+  @keyframes jbSlideUp{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:translateY(0)}}
+  @keyframes jbScaleIn{from{opacity:0;transform:scale(.94)}to{opacity:1;transform:scale(1)}}
+  @keyframes jbFadeIn{from{opacity:0}to{opacity:1}}
+  @keyframes jbSpin{from{transform:rotate(0)}to{transform:rotate(360deg)}}
+  @keyframes jbFloat{0%,100%{transform:translateY(0)}50%{transform:translateY(-6px)}}
+  .jb-glass{background:rgba(255,255,255,.04);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);border:1px solid rgba(255,255,255,.07);border-radius:18px;transition:all .3s cubic-bezier(.4,0,.2,1)}
+  .jb-glass:hover{background:rgba(255,255,255,.06);border-color:rgba(255,255,255,.11)}
+  .jb-stat:hover{transform:translateY(-4px);box-shadow:0 20px 48px rgba(0,0,0,.35)}
+  .jb-stat:hover .jb-stat-icon{transform:scale(1.12) rotate(6deg)}
+  .jb-btn{transition:all .22s ease;cursor:pointer}
+  .jb-btn:hover{transform:translateY(-1px)}
+  .jb-row{transition:background .2s ease}
+  .jb-row:hover{background:rgba(255,255,255,.04)!important}
+  .jb-overlay{animation:jbFadeIn .25s ease}
+  .jb-modal{animation:jbScaleIn .3s cubic-bezier(.4,0,.2,1)}
+  .jb-input{background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1);border-radius:12px;padding:11px 14px;color:white;font-size:14px;width:100%;outline:none;transition:all .22s ease}
+  .jb-input::placeholder{color:rgba(255,255,255,.28)}
+  .jb-input:focus{border-color:rgba(59,130,246,.5);background:rgba(255,255,255,.07);box-shadow:0 0 0 3px rgba(59,130,246,.12)}
+  .jb-input:disabled{opacity:.5;cursor:not-allowed}
+  .jb-select{background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1);border-radius:12px;padding:11px 14px;color:white;font-size:14px;width:100%;outline:none;appearance:none;cursor:pointer;transition:all .22s ease}
+  .jb-select option{background:#1a1f35;color:white}
+  .jb-select:focus{border-color:rgba(59,130,246,.5);box-shadow:0 0 0 3px rgba(59,130,246,.12)}
+  .jb-select:disabled{opacity:.5;cursor:not-allowed}
+  .jb-label{display:block;font-size:11px;font-weight:700;color:rgba(255,255,255,.45);margin-bottom:6px;text-transform:uppercase;letter-spacing:.7px}
+  .jb-search{background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.08);border-radius:12px;padding:10px 14px 10px 40px;color:white;font-size:14px;width:100%;outline:none;transition:all .22s ease}
+  .jb-search::placeholder{color:rgba(255,255,255,.28)}
+  .jb-search:focus{border-color:rgba(59,130,246,.4);background:rgba(255,255,255,.07);box-shadow:0 0 0 3px rgba(59,130,246,.1)}
+  input[type=number]::-webkit-inner-spin-button,input[type=number]::-webkit-outer-spin-button{-webkit-appearance:none;margin:0}
+  input[type=number]{-moz-appearance:textfield}
+  @media(max-width:768px){.jb-stat:hover{transform:none}.jb-stat:hover .jb-stat-icon{transform:none}}
+`;
+
+const ST = {
+  PENDING:       { l:'Pending',       icon:'⏳', c:'#fcd34d', bg:'rgba(245,158,11,.12)', bd:'rgba(245,158,11,.25)', next:'IN_PROGRESS' },
+  IN_PROGRESS:   { l:'In Progress',   icon:'🔧', c:'#93c5fd', bg:'rgba(59,130,246,.12)',  bd:'rgba(59,130,246,.25)', next:'COMPLETED' },
+  AWAITING_PARTS:{ l:'Awaiting Parts', icon:'📦', c:'#fb923c', bg:'rgba(249,115,22,.12)', bd:'rgba(249,115,22,.25)', next:'IN_PROGRESS' },
+  COMPLETED:     { l:'Completed',     icon:'✅', c:'#6ee7b7', bg:'rgba(16,185,129,.12)', bd:'rgba(16,185,129,.25)', next:'DELIVERED' },
+  DELIVERED:     { l:'Delivered',     icon:'🚗', c:'#c4b5fd', bg:'rgba(139,92,246,.12)', bd:'rgba(139,92,246,.25)', next:null },
+  CANCELLED:     { l:'Cancelled',    icon:'❌', c:'#fca5a5', bg:'rgba(239,68,68,.12)',  bd:'rgba(239,68,68,.25)',  next:null },
+};
+const PR = {
+  LOW:    { l:'Low',    icon:'🔵', c:'#93c5fd', bg:'rgba(59,130,246,.1)',  bd:'rgba(59,130,246,.2)' },
+  MEDIUM: { l:'Medium', icon:'🟡', c:'#fcd34d', bg:'rgba(245,158,11,.1)', bd:'rgba(245,158,11,.2)' },
+  HIGH:   { l:'High',   icon:'🟠', c:'#fb923c', bg:'rgba(249,115,22,.1)', bd:'rgba(249,115,22,.2)' },
+  URGENT: { l:'Urgent', icon:'🔴', c:'#fca5a5', bg:'rgba(239,68,68,.1)',  bd:'rgba(239,68,68,.2)' },
+};
+const gST = s => ST[s]||ST.PENDING;
+const gPR = p => PR[p]||PR.MEDIUM;
+
 export default function JobsPage() {
-  const [jobs, setJobs] = useState([]);
-  const [vehicles, setVehicles] = useState([]);
-  const [technicians, setTechnicians] = useState([]);
-  const [branches, setBranches] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [currentUser, setCurrentUser] = useState(null);
-  
-  // Modal states
-  const [showModal, setShowModal] = useState(false);
-  const [showDetailModal, setShowDetailModal] = useState(false);
-  const [showDeleteModal, setShowDeleteModal] = useState(false);
-  const [selectedJob, setSelectedJob] = useState(null);
-  const [submitting, setSubmitting] = useState(false);
-  
-  // Filters
-  const [filters, setFilters] = useState({
-    search: '',
-    status: '',
-    priority: '',
-    assignedToId: '',
-  });
+  const [jobs,setJobs]=useState([]);
+  const [vehicles,setVehicles]=useState([]);
+  const [technicians,setTechnicians]=useState([]);
+  const [branches,setBranches]=useState([]);
+  const [loading,setLoading]=useState(true);
+  const [currentUser,setCurrentUser]=useState(null);
+  const [isMobile,setIsMobile]=useState(false);
 
-  // Form data
-  const [formData, setFormData] = useState({
-    vehicleId: '',
-    description: '',
-    assignedToId: '',
-    priority: 'MEDIUM',
-    estimatedCost: '',
-    scheduledDate: '',
-    customerNotes: '',
-    branchId: '',
-  });
+  const [showModal,setShowModal]=useState(false);
+  const [showDetailModal,setShowDetailModal]=useState(false);
+  const [showDeleteModal,setShowDeleteModal]=useState(false);
+  const [selectedJob,setSelectedJob]=useState(null);
+  const [submitting,setSubmitting]=useState(false);
 
-  // Stats
-  const [stats, setStats] = useState({
-    total: 0,
-    pending: 0,
-    inProgress: 0,
-    completed: 0,
-  });
+  const [filters,setFilters]=useState({search:'',status:'',priority:'',assignedToId:''});
+  const [formData,setFormData]=useState({vehicleId:'',description:'',assignedToId:'',priority:'MEDIUM',estimatedCost:'',scheduledDate:'',customerNotes:'',branchId:''});
+  const [stats,setStats]=useState({total:0,pending:0,inProgress:0,completed:0});
 
-  useEffect(() => {
-    const userData = localStorage.getItem('user');
-    if (userData) {
-      setCurrentUser(JSON.parse(userData));
-    }
-    fetchInitialData();
-  }, []);
+  useEffect(()=>{const c=()=>setIsMobile(window.innerWidth<768);c();window.addEventListener('resize',c);return()=>window.removeEventListener('resize',c)},[]);
+  useEffect(()=>{const u=localStorage.getItem('user');if(u)setCurrentUser(JSON.parse(u));fetchInit()},[]);
+  useEffect(()=>{if(currentUser)fetchJobs()},[filters,currentUser]);
 
-  useEffect(() => {
-    if (currentUser) {
-      fetchJobs();
-    }
-  }, [filters, currentUser]);
+  const fetchInit=async()=>{try{const[vR,uR,bR]=await Promise.all([fetch('/api/vehicles'),fetch('/api/users'),fetch('/api/branches')]);const vD=await vR.json(),uD=await uR.json(),bD=await bR.json();if(vD.success)setVehicles(vD.data||[]);if(uD.success)setTechnicians((uD.data||[]).filter(u=>u.role==='EMPLOYEE'&&u.isActive));if(bD.success)setBranches(bD.data||[])}catch{}};
 
-  const fetchInitialData = async () => {
-    try {
-      const [vehiclesRes, usersRes, branchesRes] = await Promise.all([
-        fetch('/api/vehicles'),
-        fetch('/api/users'),
-        fetch('/api/branches'),
-      ]);
+  const fetchJobs=useCallback(async()=>{try{setLoading(true);const p=new URLSearchParams();if(filters.search)p.append('search',filters.search);if(filters.status)p.append('status',filters.status);if(filters.priority)p.append('priority',filters.priority);if(filters.assignedToId)p.append('assignedToId',filters.assignedToId);const r=await fetch(`/api/jobs?${p}`);const d=await r.json();if(d.success){setJobs(d.data||[]);const data=d.data||[];setStats({total:data.length,pending:data.filter(j=>j.status==='PENDING').length,inProgress:data.filter(j=>j.status==='IN_PROGRESS').length,completed:data.filter(j=>j.status==='COMPLETED'||j.status==='DELIVERED').length})}}catch{toast.error('Failed to load')}finally{setLoading(false)}},[filters]);
 
-      const vehiclesData = await vehiclesRes.json();
-      const usersData = await usersRes.json();
-      const branchesData = await branchesRes.json();
+  const resetForm=()=>{setFormData({vehicleId:'',description:'',assignedToId:'',priority:'MEDIUM',estimatedCost:'',scheduledDate:'',customerNotes:'',branchId:''});setSelectedJob(null)};
+  const openCreate=()=>{resetForm();setShowModal(true)};
+  const openEdit=j=>{setSelectedJob(j);setFormData({vehicleId:j.vehicleId,description:j.description||'',assignedToId:j.assignedToId||'',priority:j.priority,estimatedCost:j.estimatedCost?.toString()||'',scheduledDate:j.scheduledDate?j.scheduledDate.split('T')[0]:'',customerNotes:j.customerNotes||'',branchId:j.branchId||''});setShowModal(true)};
 
-      if (vehiclesData.success) setVehicles(vehiclesData.data || []);
-      if (usersData.success) {
-        // Filter only technicians (EMPLOYEE role)
-        setTechnicians(usersData.data?.filter(u => u.role === 'EMPLOYEE' && u.isActive) || []);
-      }
-      if (branchesData.success) setBranches(branchesData.data || []);
-    } catch (error) {
-      console.error('Error fetching initial data:', error);
-    }
-  };
+  const handleSubmit=async e=>{e.preventDefault();setSubmitting(true);try{const url=selectedJob?`/api/jobs/${selectedJob.id}`:'/api/jobs';const r=await fetch(url,{method:selectedJob?'PUT':'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(formData)});const d=await r.json();if(!r.ok){toast.error(d.message||'Failed');return}toast.success(`Job ${selectedJob?'updated':'created'}!`);resetForm();setShowModal(false);fetchJobs()}catch{toast.error('Error')}finally{setSubmitting(false)}};
 
-  const fetchJobs = useCallback(async () => {
-    try {
-      setLoading(true);
-      const params = new URLSearchParams();
-      if (filters.search) params.append('search', filters.search);
-      if (filters.status) params.append('status', filters.status);
-      if (filters.priority) params.append('priority', filters.priority);
-      if (filters.assignedToId) params.append('assignedToId', filters.assignedToId);
+  const handleDelete=async()=>{if(!selectedJob)return;setSubmitting(true);try{const r=await fetch(`/api/jobs/${selectedJob.id}`,{method:'DELETE'});const d=await r.json();if(!r.ok){toast.error(d.message||'Failed');return}toast.success('Deleted');setShowDeleteModal(false);setSelectedJob(null);fetchJobs()}catch{toast.error('Error')}finally{setSubmitting(false)}};
 
-      const response = await fetch(`/api/jobs?${params.toString()}`);
-      const data = await response.json();
+  const updateStatus=async(id,s)=>{try{const r=await fetch(`/api/jobs/${id}`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({status:s})});const d=await r.json();if(!r.ok){toast.error(d.message||'Failed');return}toast.success(`Status → ${s}`);fetchJobs();if(showDetailModal)setSelectedJob(d.data)}catch{toast.error('Error')}};
 
-      if (data.success) {
-        setJobs(data.data || []);
-        calculateStats(data.data || []);
-      } else {
-        toast.error(data.message || 'Failed to load jobs');
-      }
-    } catch (error) {
-      console.error('Error fetching jobs:', error);
-      toast.error('Failed to load jobs');
-    } finally {
-      setLoading(false);
-    }
-  }, [filters]);
+  const canManage=currentUser?.role==='SUPER_ADMIN'||currentUser?.role==='MANAGER';
+  const isEmp=currentUser?.role==='EMPLOYEE';
 
-  const calculateStats = (jobsData) => {
-    setStats({
-      total: jobsData.length,
-      pending: jobsData.filter(j => j.status === 'PENDING').length,
-      inProgress: jobsData.filter(j => j.status === 'IN_PROGRESS').length,
-      completed: jobsData.filter(j => j.status === 'COMPLETED' || j.status === 'DELIVERED').length,
-    });
-  };
+  const STATS=[
+    {label:'Total Jobs',v:stats.total,icon:'📋',grad:'linear-gradient(135deg,#3b82f6,#1d4ed8)'},
+    {label:'Pending',v:stats.pending,icon:'⏳',grad:'linear-gradient(135deg,#f59e0b,#d97706)'},
+    {label:'In Progress',v:stats.inProgress,icon:'🔧',grad:'linear-gradient(135deg,#6366f1,#4f46e5)'},
+    {label:'Completed',v:stats.completed,icon:'✅',grad:'linear-gradient(135deg,#10b981,#059669)'},
+  ];
 
-  const handleFilterChange = (e) => {
-    const { name, value } = e.target;
-    setFilters(prev => ({ ...prev, [name]: value }));
-  };
+  return(
+    <>
+      <style dangerouslySetInnerHTML={{__html:CSS}}/>
+      <div style={{minHeight:'100vh'}}>
 
-  const resetFilters = () => {
-    setFilters({
-      search: '',
-      status: '',
-      priority: '',
-      assignedToId: '',
-    });
-  };
-
-  const handleChange = (e) => {
-    const { name, value } = e.target;
-    setFormData(prev => ({ ...prev, [name]: value }));
-  };
-
-  const resetForm = () => {
-    setFormData({
-      vehicleId: '',
-      description: '',
-      assignedToId: '',
-      priority: 'MEDIUM',
-      estimatedCost: '',
-      scheduledDate: '',
-      customerNotes: '',
-      branchId: '',
-    });
-    setSelectedJob(null);
-  };
-
-  const openCreateModal = () => {
-    resetForm();
-    setShowModal(true);
-  };
-
-  const openEditModal = (job) => {
-    setSelectedJob(job);
-    setFormData({
-      vehicleId: job.vehicleId,
-      description: job.description || '',
-      assignedToId: job.assignedToId || '',
-      priority: job.priority,
-      estimatedCost: job.estimatedCost?.toString() || '',
-      scheduledDate: job.scheduledDate ? job.scheduledDate.split('T')[0] : '',
-      customerNotes: job.customerNotes || '',
-      branchId: job.branchId || '',
-    });
-    setShowModal(true);
-  };
-
-  const openDetailModal = (job) => {
-    setSelectedJob(job);
-    setShowDetailModal(true);
-  };
-
-  const openDeleteModal = (job) => {
-    setSelectedJob(job);
-    setShowDeleteModal(true);
-  };
-
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    setSubmitting(true);
-
-    try {
-      const url = selectedJob ? `/api/jobs/${selectedJob.id}` : '/api/jobs';
-      const method = selectedJob ? 'PUT' : 'POST';
-
-      const response = await fetch(url, {
-        method,
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(formData),
-      });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        toast.error(data.message || `Failed to ${selectedJob ? 'update' : 'create'} job`);
-        return;
-      }
-
-      toast.success(`Job ${selectedJob ? 'updated' : 'created'} successfully`);
-      resetForm();
-      setShowModal(false);
-      fetchJobs();
-    } catch (error) {
-      console.error('Error saving job:', error);
-      toast.error('An error occurred');
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  const handleDelete = async () => {
-    if (!selectedJob) return;
-    setSubmitting(true);
-
-    try {
-      const response = await fetch(`/api/jobs/${selectedJob.id}`, {
-        method: 'DELETE',
-      });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        toast.error(data.message || 'Failed to delete job');
-        return;
-      }
-
-      toast.success('Job deleted successfully');
-      setShowDeleteModal(false);
-      setSelectedJob(null);
-      fetchJobs();
-    } catch (error) {
-      console.error('Error deleting job:', error);
-      toast.error('An error occurred');
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  const updateJobStatus = async (jobId, newStatus) => {
-    try {
-      const response = await fetch(`/api/jobs/${jobId}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status: newStatus }),
-      });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        toast.error(data.message || 'Failed to update status');
-        return;
-      }
-
-      toast.success(`Status updated to ${newStatus}`);
-      fetchJobs();
-      if (showDetailModal) {
-        setSelectedJob(data.data);
-      }
-    } catch (error) {
-      console.error('Error updating status:', error);
-      toast.error('An error occurred');
-    }
-  };
-
-  // Status configuration
-  const statusConfig = {
-    PENDING: { 
-      label: 'Pending', 
-      color: 'bg-yellow-100 text-yellow-800 border-yellow-200',
-      icon: '⏳',
-      nextStatus: 'IN_PROGRESS'
-    },
-    IN_PROGRESS: { 
-      label: 'In Progress', 
-      color: 'bg-blue-100 text-blue-800 border-blue-200',
-      icon: '🔧',
-      nextStatus: 'COMPLETED'
-    },
-    AWAITING_PARTS: { 
-      label: 'Awaiting Parts', 
-      color: 'bg-orange-100 text-orange-800 border-orange-200',
-      icon: '📦',
-      nextStatus: 'IN_PROGRESS'
-    },
-    COMPLETED: { 
-      label: 'Completed', 
-      color: 'bg-green-100 text-green-800 border-green-200',
-      icon: '✅',
-      nextStatus: 'DELIVERED'
-    },
-    DELIVERED: { 
-      label: 'Delivered', 
-      color: 'bg-purple-100 text-purple-800 border-purple-200',
-      icon: '🚗',
-      nextStatus: null
-    },
-    CANCELLED: { 
-      label: 'Cancelled', 
-      color: 'bg-red-100 text-red-800 border-red-200',
-      icon: '❌',
-      nextStatus: null
-    },
-  };
-
-  // Priority configuration
-  const priorityConfig = {
-    LOW: { label: 'Low', color: 'bg-gray-100 text-gray-700', icon: '🔵' },
-    MEDIUM: { label: 'Medium', color: 'bg-blue-100 text-blue-700', icon: '🟡' },
-    HIGH: { label: 'High', color: 'bg-orange-100 text-orange-700', icon: '🟠' },
-    URGENT: { label: 'Urgent', color: 'bg-red-100 text-red-700', icon: '🔴' },
-  };
-
-  const canManageJobs = currentUser?.role === 'SUPER_ADMIN' || currentUser?.role === 'MANAGER';
-
-  return (
-    <div className="min-h-screen bg-gray-50">
-      {/* Header */}
-      <div className="bg-white border-b border-gray-200 sticky top-0 z-10">
-        <div className="px-4 sm:px-6 lg:px-8 py-4">
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+        {/* HEADER */}
+        <div style={{marginBottom:24,animation:'jbSlideUp .5s ease'}}>
+          <div style={{display:'flex',alignItems:'flex-start',justifyContent:'space-between',flexWrap:'wrap',gap:14}}>
             <div>
-              <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">
-                {currentUser?.role === 'EMPLOYEE' ? 'My Jobs' : 'Job Cards'}
-              </h1>
-              <p className="text-gray-500 mt-1 text-sm sm:text-base">
-                {currentUser?.role === 'EMPLOYEE' 
-                  ? 'View and manage your assigned work' 
-                  : 'Manage service jobs and work orders'}
-              </p>
+              <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:4}}>
+                <span style={{fontSize:26}}>🔧</span>
+                <h1 style={{margin:0,fontSize:'clamp(1.3rem,4vw,1.7rem)',fontWeight:800,color:'white',letterSpacing:'-.5px'}}>{isEmp?'My Jobs':'Job Cards'}</h1>
+              </div>
+              <p style={{margin:0,fontSize:13,color:'rgba(255,255,255,.4)',fontWeight:500}}>{isEmp?'View your assigned work':'Manage service jobs'}</p>
             </div>
-            {canManageJobs && (
-              <button
-                onClick={openCreateModal}
-                className="inline-flex items-center justify-center gap-2 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white px-4 sm:px-6 py-2.5 sm:py-3 rounded-xl font-semibold shadow-lg shadow-blue-500/25 transition-all duration-200 hover:shadow-xl hover:shadow-blue-500/30"
-              >
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
-                </svg>
-                <span>Create Job</span>
-              </button>
+            {canManage&&(<JBtn onClick={openCreate} label="Create Job" icon="➕" grad="linear-gradient(135deg,#3b82f6,#1d4ed8)" glow="rgba(59,130,246,.35)" full={isMobile}/>)}
+          </div>
+        </div>
+
+        {/* STATS */}
+        <div style={{display:'grid',gridTemplateColumns:`repeat(auto-fit,minmax(min(100%,${isMobile?'140px':'200px'}),1fr))`,gap:isMobile?10:14,marginBottom:20}}>
+          {STATS.map((s,i)=>(
+            <div key={s.label} className="jb-glass jb-stat" style={{padding:isMobile?14:'clamp(14px,2vw,20px)',animation:`jbSlideUp .5s ease ${i*.08}s backwards`,cursor:'default'}}>
+              <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:8}}>
+                <div style={{minWidth:0}}>
+                  <p style={{margin:0,fontSize:9.5,fontWeight:700,color:'rgba(255,255,255,.38)',textTransform:'uppercase',letterSpacing:'.7px'}}>{s.label}</p>
+                  <p style={{margin:'5px 0 0',fontSize:isMobile?'1.2rem':'clamp(1.2rem,2.5vw,1.6rem)',fontWeight:800,color:'white'}}>{s.v}</p>
+                </div>
+                <div className="jb-stat-icon" style={{width:isMobile?42:48,height:isMobile?42:48,borderRadius:13,background:s.grad,display:'flex',alignItems:'center',justifyContent:'center',fontSize:isMobile?20:22,flexShrink:0,boxShadow:'0 6px 18px rgba(0,0,0,.25)',transition:'transform .3s ease'}}>{s.icon}</div>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {/* FILTERS */}
+        <div className="jb-glass" style={{padding:isMobile?14:16,marginBottom:20,animation:'jbSlideUp .5s ease .2s backwards'}}>
+          <div style={{display:'flex',flexDirection:isMobile?'column':'row',gap:10,flexWrap:'wrap'}}>
+            <div style={{flex:1,position:'relative',minWidth:0}}>
+              <svg style={{position:'absolute',left:12,top:'50%',transform:'translateY(-50%)',width:16,height:16,color:'rgba(255,255,255,.3)',pointerEvents:'none'}} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+              <input className="jb-search" name="search" value={filters.search} onChange={e=>setFilters(p=>({...p,search:e.target.value}))} placeholder="Search job #, vehicle, customer..."/>
+            </div>
+            <select className="jb-select" value={filters.status} onChange={e=>setFilters(p=>({...p,status:e.target.value}))} style={{minWidth:isMobile?'100%':140}}>
+              <option value="">All Status</option>
+              {Object.entries(ST).map(([k,v])=><option key={k} value={k}>{v.icon} {v.l}</option>)}
+            </select>
+            <select className="jb-select" value={filters.priority} onChange={e=>setFilters(p=>({...p,priority:e.target.value}))} style={{minWidth:isMobile?'100%':130}}>
+              <option value="">All Priority</option>
+              {Object.entries(PR).map(([k,v])=><option key={k} value={k}>{v.icon} {v.l}</option>)}
+            </select>
+            {canManage&&technicians.length>0&&(
+              <select className="jb-select" value={filters.assignedToId} onChange={e=>setFilters(p=>({...p,assignedToId:e.target.value}))} style={{minWidth:isMobile?'100%':150}}>
+                <option value="">All Technicians</option>
+                {technicians.map(t=><option key={t.id} value={t.id}>{t.name}</option>)}
+              </select>
+            )}
+            {(filters.search||filters.status||filters.priority||filters.assignedToId)&&(
+              <button onClick={()=>setFilters({search:'',status:'',priority:'',assignedToId:''})} className="jb-btn" style={{padding:'10px 14px',borderRadius:12,background:'rgba(255,255,255,.04)',border:'1px solid rgba(255,255,255,.08)',color:'rgba(255,255,255,.5)',fontSize:13,fontWeight:600,display:'flex',alignItems:'center',gap:6}}>✕ Clear</button>
             )}
           </div>
         </div>
-      </div>
 
-      <div className="px-4 sm:px-6 lg:px-8 py-6">
-        {/* Stats Cards */}
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-          <div className="bg-white rounded-xl p-4 sm:p-5 shadow-sm border border-gray-100">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-xs sm:text-sm text-gray-500 font-medium">Total Jobs</p>
-                <p className="text-2xl sm:text-3xl font-bold text-gray-900 mt-1">{stats.total}</p>
-              </div>
-              <div className="w-10 h-10 sm:w-12 sm:h-12 bg-blue-100 rounded-xl flex items-center justify-center text-xl">
-                📋
-              </div>
-            </div>
-          </div>
-
-          <div className="bg-white rounded-xl p-4 sm:p-5 shadow-sm border border-gray-100">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-xs sm:text-sm text-gray-500 font-medium">Pending</p>
-                <p className="text-2xl sm:text-3xl font-bold text-yellow-600 mt-1">{stats.pending}</p>
-              </div>
-              <div className="w-10 h-10 sm:w-12 sm:h-12 bg-yellow-100 rounded-xl flex items-center justify-center text-xl">
-                ⏳
-              </div>
-            </div>
-          </div>
-
-          <div className="bg-white rounded-xl p-4 sm:p-5 shadow-sm border border-gray-100">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-xs sm:text-sm text-gray-500 font-medium">In Progress</p>
-                <p className="text-2xl sm:text-3xl font-bold text-blue-600 mt-1">{stats.inProgress}</p>
-              </div>
-              <div className="w-10 h-10 sm:w-12 sm:h-12 bg-blue-100 rounded-xl flex items-center justify-center text-xl">
-                🔧
-              </div>
-            </div>
-          </div>
-
-          <div className="bg-white rounded-xl p-4 sm:p-5 shadow-sm border border-gray-100">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-xs sm:text-sm text-gray-500 font-medium">Completed</p>
-                <p className="text-2xl sm:text-3xl font-bold text-green-600 mt-1">{stats.completed}</p>
-              </div>
-              <div className="w-10 h-10 sm:w-12 sm:h-12 bg-green-100 rounded-xl flex items-center justify-center text-xl">
-                ✅
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Filters */}
-        <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4 sm:p-6 mb-6">
-          <div className="flex flex-col lg:flex-row lg:items-center gap-4">
-            {/* Search */}
-            <div className="flex-1">
-              <div className="relative">
-                <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                </svg>
-                <input
-                  type="text"
-                  name="search"
-                  value={filters.search}
-                  onChange={handleFilterChange}
-                  placeholder="Search by job #, vehicle, or customer..."
-                  className="w-full pl-10 pr-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
-                />
-              </div>
-            </div>
-
-            {/* Filter Dropdowns */}
-            <div className="flex flex-wrap gap-3">
-              <select
-                name="status"
-                value={filters.status}
-                onChange={handleFilterChange}
-                className="px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white min-w-[140px]"
-              >
-                <option value="">All Status</option>
-                {Object.entries(statusConfig).map(([key, config]) => (
-                  <option key={key} value={key}>{config.icon} {config.label}</option>
-                ))}
-              </select>
-
-              <select
-                name="priority"
-                value={filters.priority}
-                onChange={handleFilterChange}
-                className="px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white min-w-[130px]"
-              >
-                <option value="">All Priority</option>
-                {Object.entries(priorityConfig).map(([key, config]) => (
-                  <option key={key} value={key}>{config.icon} {config.label}</option>
-                ))}
-              </select>
-
-              {canManageJobs && technicians.length > 0 && (
-                <select
-                  name="assignedToId"
-                  value={filters.assignedToId}
-                  onChange={handleFilterChange}
-                  className="px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white min-w-[150px]"
-                >
-                  <option value="">All Technicians</option>
-                  {technicians.map(tech => (
-                    <option key={tech.id} value={tech.id}>{tech.name}</option>
-                  ))}
-                </select>
-              )}
-
-              {(filters.search || filters.status || filters.priority || filters.assignedToId) && (
-                <button
-                  onClick={resetFilters}
-                  className="px-4 py-2.5 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-xl transition-colors flex items-center gap-2"
-                >
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                  Clear
-                </button>
-              )}
-            </div>
-          </div>
-        </div>
-
-        {/* Jobs List */}
-        {loading ? (
-          <div className="flex items-center justify-center py-20">
-            <div className="text-center">
-              <div className="w-16 h-16 border-4 border-blue-200 border-t-blue-600 rounded-full animate-spin mx-auto"></div>
-              <p className="text-gray-500 mt-4 font-medium">Loading jobs...</p>
-            </div>
-          </div>
-        ) : jobs.length === 0 ? (
-          <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-12 text-center">
-            <div className="w-20 h-20 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4 text-4xl">
-              🔧
-            </div>
-            <h3 className="text-lg font-semibold text-gray-900 mb-2">No jobs found</h3>
-            <p className="text-gray-500 mb-6">
-              {filters.search || filters.status || filters.priority
-                ? 'Try adjusting your filters to find jobs.'
-                : 'Create your first job card to get started.'}
-            </p>
-            {canManageJobs && !filters.search && !filters.status && !filters.priority && (
-              <button
-                onClick={openCreateModal}
-                className="inline-flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-xl font-semibold transition-colors"
-              >
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
-                </svg>
-                Create First Job
-              </button>
-            )}
-          </div>
-        ) : (
-          <>
-            {/* Desktop Table View */}
-            <div className="hidden lg:block bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
-              <div className="overflow-x-auto">
-                <table className="w-full">
-                  <thead className="bg-gray-50 border-b border-gray-100">
-                    <tr>
-                      <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Job Details</th>
-                      <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Vehicle</th>
-                      <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Customer</th>
-                      <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Status</th>
-                      <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Assigned To</th>
-                      <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Cost</th>
-                      <th className="px-6 py-4 text-right text-xs font-semibold text-gray-600 uppercase tracking-wider">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-100">
-                    {jobs.map((job) => (
-                      <tr key={job.id} className="hover:bg-gray-50 transition-colors">
-                        <td className="px-6 py-4">
-                          <div>
-                            <p className="font-semibold text-gray-900">{job.jobNumber}</p>
-                            <div className="flex items-center gap-2 mt-1">
-                              <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${priorityConfig[job.priority]?.color}`}>
-                                {priorityConfig[job.priority]?.icon} {priorityConfig[job.priority]?.label}
-                              </span>
-                            </div>
-                            <p className="text-xs text-gray-500 mt-1">
-                              {new Date(job.createdAt).toLocaleDateString('en-IN', { 
-                                day: 'numeric', 
-                                month: 'short',
-                                hour: '2-digit',
-                                minute: '2-digit'
-                              })}
-                            </p>
-                          </div>
-                        </td>
-                        <td className="px-6 py-4">
-                          <p className="font-medium text-gray-900">{job.vehicle?.licensePlate}</p>
-                          <p className="text-sm text-gray-500">{job.vehicle?.make} {job.vehicle?.model}</p>
-                        </td>
-                        <td className="px-6 py-4">
-                          <p className="font-medium text-gray-900">{job.vehicle?.customer?.name}</p>
-                          <p className="text-sm text-gray-500">{job.vehicle?.customer?.phone}</p>
-                        </td>
-                        <td className="px-6 py-4">
-                          <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold border ${statusConfig[job.status]?.color}`}>
-                            <span>{statusConfig[job.status]?.icon}</span>
-                            {statusConfig[job.status]?.label}
-                          </span>
-                        </td>
-                        <td className="px-6 py-4">
-                          {job.assignedTo ? (
-                            <div className="flex items-center gap-2">
-                              <div className="w-8 h-8 rounded-full bg-gradient-to-br from-green-500 to-emerald-500 flex items-center justify-center text-white text-xs font-bold">
-                                {job.assignedTo.name?.charAt(0)}
-                              </div>
-                              <span className="text-gray-900">{job.assignedTo.name}</span>
-                            </div>
-                          ) : (
-                            <span className="text-gray-400 italic">Unassigned</span>
-                          )}
-                        </td>
-                        <td className="px-6 py-4">
-                          <p className="font-semibold text-gray-900">
-                            ₹{(job.actualCost || job.estimatedCost || 0).toLocaleString()}
-                          </p>
-                          {job.actualCost && job.estimatedCost && job.actualCost !== job.estimatedCost && (
-                            <p className="text-xs text-gray-500 line-through">
-                              Est: ₹{job.estimatedCost.toLocaleString()}
-                            </p>
-                          )}
-                        </td>
-                        <td className="px-6 py-4">
-                          <div className="flex items-center justify-end gap-2">
-                            <button
-                              onClick={() => openDetailModal(job)}
-                              className="p-2 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
-                              title="View Details"
-                            >
-                              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-                              </svg>
-                            </button>
-                            {canManageJobs && (
-                              <>
-                                <button
-                                  onClick={() => openEditModal(job)}
-                                  className="p-2 text-gray-500 hover:text-green-600 hover:bg-green-50 rounded-lg transition-colors"
-                                  title="Edit"
-                                >
-                                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                                  </svg>
-                                </button>
-                                {!job.invoice && (
-                                  <button
-                                    onClick={() => openDeleteModal(job)}
-                                    className="p-2 text-gray-500 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                                    title="Delete"
-                                  >
-                                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                                    </svg>
-                                  </button>
-                                )}
-                              </>
-                            )}
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-
-            {/* Mobile Card View */}
-            <div className="lg:hidden space-y-4">
-              {jobs.map((job) => (
-                <div key={job.id} className="bg-white rounded-xl shadow-sm border border-gray-100 p-4">
-                  <div className="flex items-start justify-between mb-3">
-                    <div>
-                      <p className="font-bold text-gray-900">{job.jobNumber}</p>
-                      <p className="text-sm text-gray-500">
-                        {job.vehicle?.make} {job.vehicle?.model}
-                      </p>
-                    </div>
-                    <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold border ${statusConfig[job.status]?.color}`}>
-                      {statusConfig[job.status]?.icon} {statusConfig[job.status]?.label}
-                    </span>
+        {/* CONTENT */}
+        {loading?<Loader text="Loading jobs..."/>:jobs.length===0?(
+          <Empty icon="🔧" title="No jobs found" sub={(filters.search||filters.status||filters.priority)?'Try different filters':'Create your first job card'} showBtn={canManage&&!filters.search&&!filters.status} onBtn={openCreate} btnLabel="Create First Job"/>
+        ):isMobile?(
+          /* MOBILE CARDS */
+          <div style={{display:'flex',flexDirection:'column',gap:10}}>
+            {jobs.map((job,i)=>{
+              const st=gST(job.status),pr=gPR(job.priority);
+              return(
+                <div key={job.id} className="jb-glass" onClick={()=>{setSelectedJob(job);setShowDetailModal(true)}} style={{padding:16,cursor:'pointer',animation:`jbSlideUp .4s ease ${i*.03}s backwards`}}>
+                  <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:10}}>
+                    <div><p style={{margin:0,fontWeight:700,color:'white',fontSize:14}}>{job.jobNumber}</p><p style={{margin:'2px 0 0',fontSize:12,color:'rgba(255,255,255,.4)'}}>{job.vehicle?.make} {job.vehicle?.model}</p></div>
+                    <Badge l={st.l} icon={st.icon} c={st.c} bg={st.bg} bd={st.bd}/>
                   </div>
-
-                  <div className="flex items-center gap-2 mb-3">
-                    <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${priorityConfig[job.priority]?.color}`}>
-                      {priorityConfig[job.priority]?.icon} {priorityConfig[job.priority]?.label}
-                    </span>
-                    <span className="text-gray-300">•</span>
-                    <span className="text-sm text-gray-600">{job.vehicle?.licensePlate}</span>
+                  <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:10,flexWrap:'wrap'}}>
+                    <Badge l={pr.l} icon={pr.icon} c={pr.c} bg={pr.bg} bd={pr.bd}/>
+                    <span style={{color:'rgba(255,255,255,.2)'}}>•</span>
+                    <span style={{fontSize:13,color:'rgba(255,255,255,.5)'}}>{job.vehicle?.licensePlate}</span>
                   </div>
-
-                  <div className="grid grid-cols-2 gap-3 text-sm mb-4">
-                    <div>
-                      <p className="text-gray-500">Customer</p>
-                      <p className="font-medium text-gray-900">{job.vehicle?.customer?.name}</p>
-                    </div>
-                    <div>
-                      <p className="text-gray-500">Technician</p>
-                      <p className="font-medium text-gray-900">{job.assignedTo?.name || 'Unassigned'}</p>
-                    </div>
-                    <div>
-                      <p className="text-gray-500">Cost</p>
-                      <p className="font-medium text-gray-900">₹{(job.actualCost || job.estimatedCost || 0).toLocaleString()}</p>
-                    </div>
-                    <div>
-                      <p className="text-gray-500">Created</p>
-                      <p className="font-medium text-gray-900">
-                        {new Date(job.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}
-                      </p>
-                    </div>
+                  <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginBottom:10}}>
+                    <div><p style={{margin:0,fontSize:10,color:'rgba(255,255,255,.35)'}}>Customer</p><p style={{margin:0,fontWeight:600,color:'white',fontSize:13}}>{job.vehicle?.customer?.name}</p></div>
+                    <div><p style={{margin:0,fontSize:10,color:'rgba(255,255,255,.35)'}}>Technician</p><p style={{margin:0,fontWeight:600,color:'white',fontSize:13}}>{job.assignedTo?.name||'Unassigned'}</p></div>
+                    <div><p style={{margin:0,fontSize:10,color:'rgba(255,255,255,.35)'}}>Cost</p><p style={{margin:0,fontWeight:700,color:'#6ee7b7',fontSize:14}}>₹{(job.actualCost||job.estimatedCost||0).toLocaleString()}</p></div>
+                    <div><p style={{margin:0,fontSize:10,color:'rgba(255,255,255,.35)'}}>Created</p><p style={{margin:0,fontWeight:600,color:'white',fontSize:12}}>{new Date(job.createdAt).toLocaleDateString('en-IN',{day:'numeric',month:'short'})}</p></div>
                   </div>
-
-                  <div className="flex items-center justify-between pt-3 border-t border-gray-100">
-                    <button
-                      onClick={() => openDetailModal(job)}
-                      className="text-blue-600 font-medium text-sm"
-                    >
-                      View Details →
-                    </button>
-                    {canManageJobs && (
-                      <div className="flex items-center gap-2">
-                        <button
-                          onClick={() => openEditModal(job)}
-                          className="p-2 text-gray-500 hover:text-green-600 rounded-lg"
-                        >
-                          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                          </svg>
-                        </button>
-                        {!job.invoice && (
-                          <button
-                            onClick={() => openDeleteModal(job)}
-                            className="p-2 text-gray-500 hover:text-red-600 rounded-lg"
-                          >
-                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                            </svg>
-                          </button>
-                        )}
+                  <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',paddingTop:10,borderTop:'1px solid rgba(255,255,255,.05)'}}>
+                    <span style={{color:'#93c5fd',fontWeight:600,fontSize:12}}>View Details →</span>
+                    {canManage&&(
+                      <div style={{display:'flex',gap:4}}>
+                        <TBtn onClick={e=>{e.stopPropagation();openEdit(job)}} icon="✏️" hc="#3b82f6"/>
+                        {!job.invoice&&<TBtn onClick={e=>{e.stopPropagation();setSelectedJob(job);setShowDeleteModal(true)}} icon="🗑️" hc="#ef4444"/>}
                       </div>
                     )}
                   </div>
                 </div>
-              ))}
+              );
+            })}
+          </div>
+        ):(
+          /* DESKTOP TABLE */
+          <div className="jb-glass" style={{overflow:'hidden',animation:'jbSlideUp .5s ease .3s backwards'}}>
+            <div style={{overflowX:'auto'}}>
+              <table style={{width:'100%',borderCollapse:'collapse',minWidth:900}}>
+                <thead><tr>
+                  {['Job Details','Vehicle','Customer','Status','Assigned To','Cost','Actions'].map(h=>(
+                    <th key={h} style={{padding:'13px 18px',textAlign:h==='Actions'?'right':'left',fontSize:10,fontWeight:800,color:'rgba(255,255,255,.3)',textTransform:'uppercase',letterSpacing:'.8px',borderBottom:'1px solid rgba(255,255,255,.06)'}}>{h}</th>
+                  ))}
+                </tr></thead>
+                <tbody>
+                  {jobs.map((job,i)=>{
+                    const st=gST(job.status),pr=gPR(job.priority);
+                    return(
+                      <tr key={job.id} className="jb-row" style={{borderBottom:i<jobs.length-1?'1px solid rgba(255,255,255,.04)':'none',animation:`jbSlideUp .35s ease ${i*.03}s backwards`}}>
+                        <td style={{padding:'13px 18px'}}>
+                          <p style={{margin:0,fontWeight:700,color:'white',fontSize:13}}>{job.jobNumber}</p>
+                          <Badge l={pr.l} icon={pr.icon} c={pr.c} bg={pr.bg} bd={pr.bd} small/>
+                          <p style={{margin:'4px 0 0',fontSize:10,color:'rgba(255,255,255,.3)'}}>{new Date(job.createdAt).toLocaleDateString('en-IN',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'})}</p>
+                        </td>
+                        <td style={{padding:'13px 18px'}}><p style={{margin:0,fontWeight:600,color:'white',fontSize:13}}>{job.vehicle?.licensePlate}</p><p style={{margin:'1px 0 0',fontSize:11,color:'rgba(255,255,255,.35)'}}>{job.vehicle?.make} {job.vehicle?.model}</p></td>
+                        <td style={{padding:'13px 18px'}}><p style={{margin:0,fontWeight:600,color:'white',fontSize:13}}>{job.vehicle?.customer?.name}</p><p style={{margin:'1px 0 0',fontSize:11,color:'rgba(255,255,255,.35)'}}>{job.vehicle?.customer?.phone}</p></td>
+                        <td style={{padding:'13px 18px'}}><Badge l={st.l} icon={st.icon} c={st.c} bg={st.bg} bd={st.bd}/></td>
+                        <td style={{padding:'13px 18px'}}>
+                          {job.assignedTo?(
+                            <div style={{display:'flex',alignItems:'center',gap:8}}>
+                              <div style={{width:28,height:28,borderRadius:'50%',background:'linear-gradient(135deg,#10b981,#059669)',display:'flex',alignItems:'center',justifyContent:'center',color:'white',fontSize:11,fontWeight:800,flexShrink:0}}>{job.assignedTo.name?.charAt(0)}</div>
+                              <span style={{fontSize:13,color:'white'}}>{job.assignedTo.name}</span>
+                            </div>
+                          ):<span style={{fontSize:13,color:'rgba(255,255,255,.3)',fontStyle:'italic'}}>Unassigned</span>}
+                        </td>
+                        <td style={{padding:'13px 18px'}}>
+                          <p style={{margin:0,fontWeight:700,color:'#6ee7b7',fontSize:14}}>₹{(job.actualCost||job.estimatedCost||0).toLocaleString()}</p>
+                          {job.actualCost&&job.estimatedCost&&job.actualCost!==job.estimatedCost&&(
+                            <p style={{margin:'1px 0 0',fontSize:10,color:'rgba(255,255,255,.3)',textDecoration:'line-through'}}>Est: ₹{job.estimatedCost.toLocaleString()}</p>
+                          )}
+                        </td>
+                        <td style={{padding:'13px 18px'}}>
+                          <div style={{display:'flex',justifyContent:'flex-end',gap:4}}>
+                            <TBtn onClick={()=>{setSelectedJob(job);setShowDetailModal(true)}} icon="👁️" hc="#3b82f6"/>
+                            {canManage&&(<><TBtn onClick={()=>openEdit(job)} icon="✏️" hc="#10b981"/>{!job.invoice&&<TBtn onClick={()=>{setSelectedJob(job);setShowDeleteModal(true)}} icon="🗑️" hc="#ef4444"/>}</>)}
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
             </div>
-          </>
+          </div>
         )}
       </div>
 
-      {/* Create/Edit Modal */}
-      {showModal && (
-        <div 
-          className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4"
-          onClick={() => setShowModal(false)}
-        >
-          <div 
-            className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-hidden"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="px-6 py-4 border-b border-gray-100 bg-gradient-to-r from-blue-600 to-indigo-600">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h2 className="text-xl font-bold text-white">
-                    {selectedJob ? 'Edit Job' : 'Create New Job'}
-                  </h2>
-                  <p className="text-blue-100 text-sm mt-0.5">
-                    {selectedJob ? `Editing ${selectedJob.jobNumber}` : 'Fill in the job details'}
-                  </p>
-                </div>
-                <button
-                  onClick={() => setShowModal(false)}
-                  className="p-2 hover:bg-white/10 rounded-lg transition-colors"
-                >
-                  <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                </button>
-              </div>
-            </div>
-
-            <form onSubmit={handleSubmit} className="p-6 overflow-y-auto max-h-[calc(90vh-180px)]">
-              <div className="space-y-5">
-                {/* Vehicle Selection */}
-                <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-2">
-                    Vehicle <span className="text-red-500">*</span>
-                  </label>
-                  <select
-                    name="vehicleId"
-                    value={formData.vehicleId}
-                    onChange={handleChange}
-                    className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white"
-                    required
-                    disabled={!!selectedJob}
-                  >
+      {/* CREATE/EDIT MODAL */}
+      {showModal&&(
+        <Ovl onClose={()=>setShowModal(false)}>
+          <div style={{maxWidth:620,width:'100%'}}>
+            <MH grad="linear-gradient(135deg,#3b82f6,#1d4ed8)" title={selectedJob?'Edit Job':'Create New Job'} sub={selectedJob?`Editing ${selectedJob.jobNumber}`:'Fill in job details'} onClose={()=>setShowModal(false)}/>
+            <form onSubmit={handleSubmit} style={{padding:isMobile?20:24,background:'rgba(15,23,42,.97)',borderRadius:'0 0 20px 20px',border:'1px solid rgba(255,255,255,.06)',borderTop:'none'}}>
+              <div style={{maxHeight:'calc(72vh - 200px)',overflowY:'auto',paddingRight:4}}>
+                <div style={{marginBottom:16}}>
+                  <label className="jb-label">Vehicle <span style={{color:'#3b82f6'}}>*</span></label>
+                  <select className="jb-select" name="vehicleId" value={formData.vehicleId} onChange={e=>setFormData(p=>({...p,vehicleId:e.target.value}))} required disabled={!!selectedJob}>
                     <option value="">Select Vehicle</option>
-                    {vehicles.map((v) => (
-                      <option key={v.id} value={v.id}>
-                        {v.licensePlate} - {v.make} {v.model} ({v.customer?.name})
-                      </option>
-                    ))}
+                    {vehicles.map(v=><option key={v.id} value={v.id}>{v.licensePlate} - {v.make} {v.model} ({v.customer?.name})</option>)}
                   </select>
                 </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-                  {/* Technician */}
-                  <div>
-                    <label className="block text-sm font-semibold text-gray-700 mb-2">
-                      Assign Technician
-                    </label>
-                    <select
-                      name="assignedToId"
-                      value={formData.assignedToId}
-                      onChange={handleChange}
-                      className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white"
-                    >
-                      <option value="">Select Technician</option>
-                      {technicians.map((tech) => (
-                        <option key={tech.id} value={tech.id}>
-                          🔧 {tech.name}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-
-                  {/* Priority */}
-                  <div>
-                    <label className="block text-sm font-semibold text-gray-700 mb-2">
-                      Priority
-                    </label>
-                    <select
-                      name="priority"
-                      value={formData.priority}
-                      onChange={handleChange}
-                      className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white"
-                    >
-                      {Object.entries(priorityConfig).map(([key, config]) => (
-                        <option key={key} value={key}>{config.icon} {config.label}</option>
-                      ))}
-                    </select>
-                  </div>
-
-                  {/* Estimated Cost */}
-                  <div>
-                    <label className="block text-sm font-semibold text-gray-700 mb-2">
-                      Estimated Cost (₹)
-                    </label>
-                    <input
-                      type="number"
-                      name="estimatedCost"
-                      value={formData.estimatedCost}
-                      onChange={handleChange}
-                      className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                      placeholder="0.00"
-                      min="0"
-                      step="0.01"
-                    />
-                  </div>
-
-                  {/* Scheduled Date */}
-                  <div>
-                    <label className="block text-sm font-semibold text-gray-700 mb-2">
-                      Scheduled Date
-                    </label>
-                    <input
-                      type="date"
-                      name="scheduledDate"
-                      value={formData.scheduledDate}
-                      onChange={handleChange}
-                      className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                    />
-                  </div>
+                <div style={{display:'grid',gridTemplateColumns:isMobile?'1fr':'1fr 1fr',gap:14,marginBottom:16}}>
+                  <div><label className="jb-label">Assign Technician</label><select className="jb-select" value={formData.assignedToId} onChange={e=>setFormData(p=>({...p,assignedToId:e.target.value}))}><option value="">Select</option>{technicians.map(t=><option key={t.id} value={t.id}>🔧 {t.name}</option>)}</select></div>
+                  <div><label className="jb-label">Priority</label><select className="jb-select" value={formData.priority} onChange={e=>setFormData(p=>({...p,priority:e.target.value}))}>{Object.entries(PR).map(([k,v])=><option key={k} value={k}>{v.icon} {v.l}</option>)}</select></div>
+                  <div><label className="jb-label">Estimated Cost (₹)</label><input className="jb-input" type="number" value={formData.estimatedCost} onChange={e=>setFormData(p=>({...p,estimatedCost:e.target.value}))} placeholder="0.00" min="0" step="0.01"/></div>
+                  <div><label className="jb-label">Scheduled Date</label><input className="jb-input" type="date" value={formData.scheduledDate} onChange={e=>setFormData(p=>({...p,scheduledDate:e.target.value}))}/></div>
                 </div>
-
-                {/* Branch Selection (Super Admin only) */}
-                {currentUser?.role === 'SUPER_ADMIN' && branches.length > 0 && !selectedJob && (
-                  <div>
-                    <label className="block text-sm font-semibold text-gray-700 mb-2">
-                      Branch
-                    </label>
-                    <select
-                      name="branchId"
-                      value={formData.branchId}
-                      onChange={handleChange}
-                      className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white"
-                    >
-                      <option value="">Select Branch</option>
-                      {branches.map((branch) => (
-                        <option key={branch.id} value={branch.id}>
-                          {branch.name} - {branch.location}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
+                {currentUser?.role==='SUPER_ADMIN'&&branches.length>0&&!selectedJob&&(
+                  <div style={{marginBottom:16}}><label className="jb-label">Branch</label><select className="jb-select" value={formData.branchId} onChange={e=>setFormData(p=>({...p,branchId:e.target.value}))}><option value="">Select Branch</option>{branches.map(b=><option key={b.id} value={b.id}>{b.name}</option>)}</select></div>
                 )}
-
-                {/* Description */}
-                <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-2">
-                    Work Description
-                  </label>
-                  <textarea
-                    name="description"
-                    value={formData.description}
-                    onChange={handleChange}
-                    rows={4}
-                    className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 resize-none"
-                    placeholder="Describe the work to be performed..."
-                  />
-                </div>
-
-                {/* Customer Notes */}
-                <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-2">
-                    Customer Notes
-                  </label>
-                  <textarea
-                    name="customerNotes"
-                    value={formData.customerNotes}
-                    onChange={handleChange}
-                    rows={2}
-                    className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 resize-none"
-                    placeholder="Any specific instructions from customer..."
-                  />
-                </div>
+                <div style={{marginBottom:16}}><label className="jb-label">Work Description</label><textarea className="jb-input" value={formData.description} onChange={e=>setFormData(p=>({...p,description:e.target.value}))} rows={3} placeholder="Describe work..." style={{resize:'none'}}/></div>
+                <div><label className="jb-label">Customer Notes</label><textarea className="jb-input" value={formData.customerNotes} onChange={e=>setFormData(p=>({...p,customerNotes:e.target.value}))} rows={2} placeholder="Customer instructions..." style={{resize:'none'}}/></div>
               </div>
-
-              <div className="flex gap-3 justify-end mt-8 pt-6 border-t border-gray-100">
-                <button
-                  type="button"
-                  onClick={() => setShowModal(false)}
-                  className="px-5 py-2.5 border border-gray-200 rounded-xl text-gray-700 hover:bg-gray-50 font-medium transition-colors"
-                  disabled={submitting}
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="px-5 py-2.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white rounded-xl font-medium transition-all flex items-center gap-2 disabled:opacity-50"
-                  disabled={submitting}
-                >
-                  {submitting && (
-                    <svg className="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                    </svg>
-                  )}
-                  {selectedJob ? 'Update Job' : 'Create Job'}
-                </button>
-              </div>
+              <MF onCancel={()=>setShowModal(false)} submitting={submitting} label={selectedJob?'Update Job':'Create Job'} grad="linear-gradient(135deg,#3b82f6,#1d4ed8)" glow="rgba(59,130,246,.3)"/>
             </form>
           </div>
-        </div>
+        </Ovl>
       )}
 
-      {/* Job Detail Modal */}
-      {showDetailModal && selectedJob && (
-        <div 
-          className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4"
-          onClick={() => setShowDetailModal(false)}
-        >
-          <div 
-            className="bg-white rounded-2xl shadow-2xl w-full max-w-3xl max-h-[90vh] overflow-hidden"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="px-6 py-4 border-b border-gray-100 bg-gradient-to-r from-gray-800 to-gray-900">
-              <div className="flex items-center justify-between">
+      {/* DETAIL MODAL */}
+      {showDetailModal&&selectedJob&&(
+        <Ovl onClose={()=>{setShowDetailModal(false);setSelectedJob(null)}}>
+          <div style={{maxWidth:620,width:'100%'}}>
+            <div style={{padding:'20px 22px',background:'rgba(255,255,255,.04)',borderRadius:'20px 20px 0 0',border:'1px solid rgba(255,255,255,.08)',borderBottom:'none'}}>
+              <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start'}}>
                 <div>
-                  <h2 className="text-xl font-bold text-white">{selectedJob.jobNumber}</h2>
-                  <p className="text-gray-300 text-sm mt-0.5">
-                    Created {new Date(selectedJob.createdAt).toLocaleDateString('en-IN', {
-                      day: 'numeric',
-                      month: 'long',
-                      year: 'numeric'
-                    })}
-                  </p>
+                  <h2 style={{margin:'0 0 8px',fontSize:20,fontWeight:800,color:'white'}}>{selectedJob.jobNumber}</h2>
+                  <div style={{display:'flex',gap:6,flexWrap:'wrap'}}>
+                    <Badge {...gST(selectedJob.status)}/>
+                    <Badge {...gPR(selectedJob.priority)} suffix=" Priority"/>
+                  </div>
                 </div>
-                <button
-                  onClick={() => setShowDetailModal(false)}
-                  className="p-2 hover:bg-white/10 rounded-lg transition-colors"
-                >
-                  <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                </button>
+                <CBtn onClick={()=>{setShowDetailModal(false);setSelectedJob(null)}}/>
               </div>
             </div>
 
-            <div className="p-6 overflow-y-auto max-h-[calc(90vh-180px)]">
-              {/* Status and Priority */}
-              <div className="flex flex-wrap items-center gap-3 mb-6">
-                <span className={`inline-flex items-center gap-1.5 px-4 py-2 rounded-full text-sm font-semibold border ${statusConfig[selectedJob.status]?.color}`}>
-                  {statusConfig[selectedJob.status]?.icon} {statusConfig[selectedJob.status]?.label}
-                </span>
-                <span className={`inline-flex items-center gap-1.5 px-4 py-2 rounded-full text-sm font-semibold ${priorityConfig[selectedJob.priority]?.color}`}>
-                  {priorityConfig[selectedJob.priority]?.icon} {priorityConfig[selectedJob.priority]?.label} Priority
-                </span>
-              </div>
-
-              {/* Quick Actions */}
-              {statusConfig[selectedJob.status]?.nextStatus && (
-                <div className="bg-blue-50 rounded-xl p-4 mb-6">
-                  <p className="text-sm text-blue-700 mb-3">Quick Action:</p>
-                  <button
-                    onClick={() => updateJobStatus(selectedJob.id, statusConfig[selectedJob.status].nextStatus)}
-                    className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-medium text-sm transition-colors"
-                  >
-                    Move to {statusConfig[statusConfig[selectedJob.status].nextStatus]?.label}
+            <div style={{padding:isMobile?20:24,background:'rgba(15,23,42,.97)',borderRadius:'0 0 20px 20px',border:'1px solid rgba(255,255,255,.06)',borderTop:'none',maxHeight:'calc(72vh - 180px)',overflowY:'auto'}}>
+              {/* Quick Action */}
+              {gST(selectedJob.status).next&&(
+                <div style={{padding:14,borderRadius:12,background:'rgba(59,130,246,.08)',border:'1px solid rgba(59,130,246,.2)',marginBottom:18}}>
+                  <p style={{margin:'0 0 8px',fontSize:12,color:'#93c5fd',fontWeight:600}}>Quick Action:</p>
+                  <button onClick={()=>updateStatus(selectedJob.id,gST(selectedJob.status).next)} className="jb-btn" style={{padding:'8px 16px',borderRadius:10,background:'linear-gradient(135deg,#3b82f6,#1d4ed8)',border:'none',color:'white',fontSize:13,fontWeight:700,boxShadow:'0 4px 12px rgba(59,130,246,.3)'}}>
+                    Move to {gST(gST(selectedJob.status).next).l}
                   </button>
                 </div>
               )}
 
-              {/* Details Grid */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
-                {/* Vehicle Info */}
-                <div className="bg-gray-50 rounded-xl p-4">
-                  <h3 className="font-semibold text-gray-900 mb-3 flex items-center gap-2">
-                    🚗 Vehicle Information
-                  </h3>
-                  <div className="space-y-2 text-sm">
-                    <p><span className="text-gray-500">Registration:</span> <span className="font-medium">{selectedJob.vehicle?.licensePlate}</span></p>
-                    <p><span className="text-gray-500">Make/Model:</span> <span className="font-medium">{selectedJob.vehicle?.make} {selectedJob.vehicle?.model}</span></p>
-                    <p><span className="text-gray-500">Year:</span> <span className="font-medium">{selectedJob.vehicle?.year}</span></p>
-                    {selectedJob.vehicle?.color && (
-                      <p><span className="text-gray-500">Color:</span> <span className="font-medium">{selectedJob.vehicle?.color}</span></p>
-                    )}
+              {/* Info cards */}
+              <div style={{display:'grid',gridTemplateColumns:isMobile?'1fr':'1fr 1fr',gap:12,marginBottom:18}}>
+                {[
+                  {title:'🚗 Vehicle',items:[{l:'Registration',v:selectedJob.vehicle?.licensePlate},{l:'Make/Model',v:`${selectedJob.vehicle?.make} ${selectedJob.vehicle?.model}`},{l:'Year',v:selectedJob.vehicle?.year},{l:'Color',v:selectedJob.vehicle?.color}].filter(x=>x.v)},
+                  {title:'👤 Customer',items:[{l:'Name',v:selectedJob.vehicle?.customer?.name},{l:'Phone',v:selectedJob.vehicle?.customer?.phone},{l:'Email',v:selectedJob.vehicle?.customer?.email}].filter(x=>x.v)},
+                  {title:'🔧 Assignment',items:[{l:'Technician',v:selectedJob.assignedTo?.name||'Not assigned'},{l:'Branch',v:selectedJob.branch?.name},{l:'Scheduled',v:selectedJob.scheduledDate?new Date(selectedJob.scheduledDate).toLocaleDateString('en-IN'):null}].filter(x=>x.v)},
+                  {title:'💰 Cost',items:[{l:'Estimated',v:`₹${(selectedJob.estimatedCost||0).toLocaleString()}`},{l:'Actual',v:`₹${(selectedJob.actualCost||0).toLocaleString()}`},{l:'Labor',v:selectedJob.laborHours?`${selectedJob.laborHours} hrs`:null}].filter(x=>x.v)},
+                ].map(card=>(
+                  <div key={card.title} style={{padding:14,borderRadius:12,background:'rgba(255,255,255,.03)',border:'1px solid rgba(255,255,255,.06)'}}>
+                    <p style={{margin:'0 0 8px',fontSize:12,fontWeight:700,color:'rgba(255,255,255,.5)'}}>{card.title}</p>
+                    <div style={{display:'flex',flexDirection:'column',gap:4}}>
+                      {card.items.map(item=>(<p key={item.l} style={{margin:0,fontSize:12,color:'rgba(255,255,255,.45)'}}>{item.l}: <strong style={{color:'white'}}>{item.v}</strong></p>))}
+                    </div>
                   </div>
-                </div>
-
-                {/* Customer Info */}
-                <div className="bg-gray-50 rounded-xl p-4">
-                  <h3 className="font-semibold text-gray-900 mb-3 flex items-center gap-2">
-                    👤 Customer Information
-                  </h3>
-                  <div className="space-y-2 text-sm">
-                    <p><span className="text-gray-500">Name:</span> <span className="font-medium">{selectedJob.vehicle?.customer?.name}</span></p>
-                    <p><span className="text-gray-500">Phone:</span> <span className="font-medium">{selectedJob.vehicle?.customer?.phone}</span></p>
-                    {selectedJob.vehicle?.customer?.email && (
-                      <p><span className="text-gray-500">Email:</span> <span className="font-medium">{selectedJob.vehicle?.customer?.email}</span></p>
-                    )}
-                  </div>
-                </div>
-
-                {/* Assignment Info */}
-                <div className="bg-gray-50 rounded-xl p-4">
-                  <h3 className="font-semibold text-gray-900 mb-3 flex items-center gap-2">
-                    🔧 Assignment
-                  </h3>
-                  <div className="space-y-2 text-sm">
-                    <p>
-                      <span className="text-gray-500">Technician:</span>{' '}
-                      <span className="font-medium">{selectedJob.assignedTo?.name || 'Not assigned'}</span>
-                    </p>
-                    <p>
-                      <span className="text-gray-500">Branch:</span>{' '}
-                      <span className="font-medium">{selectedJob.branch?.name}</span>
-                    </p>
-                    {selectedJob.scheduledDate && (
-                      <p>
-                        <span className="text-gray-500">Scheduled:</span>{' '}
-                        <span className="font-medium">
-                          {new Date(selectedJob.scheduledDate).toLocaleDateString('en-IN')}
-                        </span>
-                      </p>
-                    )}
-                  </div>
-                </div>
-
-                {/* Cost Info */}
-                <div className="bg-gray-50 rounded-xl p-4">
-                  <h3 className="font-semibold text-gray-900 mb-3 flex items-center gap-2">
-                    💰 Cost Details
-                  </h3>
-                  <div className="space-y-2 text-sm">
-                    <p>
-                      <span className="text-gray-500">Estimated:</span>{' '}
-                      <span className="font-medium">₹{(selectedJob.estimatedCost || 0).toLocaleString()}</span>
-                    </p>
-                    <p>
-                      <span className="text-gray-500">Actual:</span>{' '}
-                      <span className="font-medium">₹{(selectedJob.actualCost || 0).toLocaleString()}</span>
-                    </p>
-                    {selectedJob.laborHours && (
-                      <p>
-                        <span className="text-gray-500">Labor Hours:</span>{' '}
-                        <span className="font-medium">{selectedJob.laborHours} hrs</span>
-                      </p>
-                    )}
-                  </div>
-                </div>
+                ))}
               </div>
 
-              {/* Description */}
-              {selectedJob.description && (
-                <div className="mb-6">
-                  <h3 className="font-semibold text-gray-900 mb-2">Work Description</h3>
-                  <p className="text-gray-600 bg-gray-50 rounded-xl p-4">{selectedJob.description}</p>
+              {selectedJob.description&&(
+                <div style={{padding:14,borderRadius:12,background:'rgba(255,255,255,.03)',border:'1px solid rgba(255,255,255,.05)',marginBottom:18}}>
+                  <p style={{margin:'0 0 4px',fontSize:10,color:'rgba(255,255,255,.35)',fontWeight:600}}>Work Description</p>
+                  <p style={{margin:0,fontSize:13,color:'rgba(255,255,255,.6)',lineHeight:1.5}}>{selectedJob.description}</p>
                 </div>
               )}
 
-              {/* Timeline */}
-              {selectedJob.timeline && selectedJob.timeline.length > 0 && (
+              {selectedJob.timeline?.length>0&&(
                 <div>
-                  <h3 className="font-semibold text-gray-900 mb-3">Timeline</h3>
-                  <div className="space-y-3">
-                    {selectedJob.timeline.map((entry, index) => (
-                      <div key={entry.id || index} className="flex gap-3">
-                        <div className="w-2 h-2 rounded-full bg-blue-500 mt-2"></div>
-                        <div>
-                          <p className="font-medium text-gray-900">{entry.description}</p>
-                          <p className="text-xs text-gray-500">
-                            {new Date(entry.createdAt).toLocaleString('en-IN')}
-                          </p>
-                        </div>
+                  <p style={{margin:'0 0 10px',fontSize:10,color:'rgba(255,255,255,.35)',fontWeight:700,textTransform:'uppercase',letterSpacing:'.5px'}}>Timeline</p>
+                  <div style={{display:'flex',flexDirection:'column',gap:8}}>
+                    {selectedJob.timeline.map((e,i)=>(
+                      <div key={e.id||i} style={{display:'flex',gap:10,alignItems:'flex-start'}}>
+                        <div style={{width:6,height:6,borderRadius:'50%',background:'#3b82f6',marginTop:6,flexShrink:0}}/>
+                        <div><p style={{margin:0,fontWeight:600,color:'white',fontSize:13}}>{e.description}</p><p style={{margin:'2px 0 0',fontSize:10,color:'rgba(255,255,255,.3)'}}>{new Date(e.createdAt).toLocaleString('en-IN')}</p></div>
                       </div>
                     ))}
                   </div>
                 </div>
               )}
-            </div>
 
-            <div className="px-6 py-4 border-t border-gray-100 flex gap-3 justify-end">
-              <button
-                onClick={() => setShowDetailModal(false)}
-                className="px-5 py-2.5 border border-gray-200 rounded-xl text-gray-700 hover:bg-gray-50 font-medium transition-colors"
-              >
-                Close
+              <div style={{display:'flex',gap:8,justifyContent:'flex-end',marginTop:20,paddingTop:16,borderTop:'1px solid rgba(255,255,255,.06)'}}>
+                <JBtn onClick={()=>{setShowDetailModal(false);setSelectedJob(null)}} label="Close" outline color="rgba(255,255,255,.4)"/>
+                {canManage&&<JBtn onClick={()=>{setShowDetailModal(false);openEdit(selectedJob)}} label="Edit Job" grad="linear-gradient(135deg,#3b82f6,#1d4ed8)" glow="rgba(59,130,246,.3)"/>}
+              </div>
+            </div>
+          </div>
+        </Ovl>
+      )}
+
+      {/* DELETE MODAL */}
+      {showDeleteModal&&selectedJob&&(
+        <Ovl onClose={()=>setShowDeleteModal(false)}>
+          <div style={{maxWidth:380,width:'100%',background:'rgba(15,23,42,.97)',borderRadius:20,border:'1px solid rgba(255,255,255,.06)',padding:28,textAlign:'center'}}>
+            <div style={{width:56,height:56,borderRadius:'50%',background:'rgba(239,68,68,.12)',display:'flex',alignItems:'center',justifyContent:'center',margin:'0 auto 16px',fontSize:26}}>⚠️</div>
+            <h3 style={{margin:'0 0 6px',fontSize:17,fontWeight:800,color:'white'}}>Delete Job?</h3>
+            <p style={{margin:'0 0 20px',fontSize:13,color:'rgba(255,255,255,.45)'}}>Delete <span style={{color:'#fca5a5',fontWeight:700}}>{selectedJob.jobNumber}</span>? Cannot be undone.</p>
+            <div style={{display:'flex',gap:10}}>
+              <JBtn onClick={()=>setShowDeleteModal(false)} label="Cancel" outline color="rgba(255,255,255,.4)" style={{flex:1}}/>
+              <button onClick={handleDelete} disabled={submitting} className="jb-btn" style={{flex:1,padding:'10px 0',borderRadius:12,background:'linear-gradient(135deg,#ef4444,#dc2626)',border:'none',color:'white',fontSize:13,fontWeight:700,opacity:submitting?.6:1,display:'flex',alignItems:'center',justifyContent:'center',gap:6}}>
+                {submitting&&<Spin/>}Delete
               </button>
-              {canManageJobs && (
-                <button
-                  onClick={() => {
-                    setShowDetailModal(false);
-                    openEditModal(selectedJob);
-                  }}
-                  className="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-medium transition-colors"
-                >
-                  Edit Job
-                </button>
-              )}
             </div>
           </div>
-        </div>
+        </Ovl>
       )}
-
-      {/* Delete Confirmation Modal */}
-      {showDeleteModal && selectedJob && (
-        <div 
-          className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4"
-          onClick={() => setShowDeleteModal(false)}
-        >
-          <div 
-            className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="p-6 text-center">
-              <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                <svg className="w-8 h-8 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-                </svg>
-              </div>
-              <h3 className="text-xl font-bold text-gray-900 mb-2">Delete Job</h3>
-              <p className="text-gray-600 mb-6">
-                Are you sure you want to delete job <span className="font-semibold">{selectedJob.jobNumber}</span>? 
-                This action cannot be undone.
-              </p>
-              
-              <div className="flex gap-3">
-                <button
-                  onClick={() => setShowDeleteModal(false)}
-                  className="flex-1 px-4 py-2.5 border border-gray-200 rounded-xl text-gray-700 hover:bg-gray-50 font-medium transition-colors"
-                  disabled={submitting}
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={handleDelete}
-                  className="flex-1 px-4 py-2.5 bg-red-600 hover:bg-red-700 text-white rounded-xl font-medium transition-colors flex items-center justify-center gap-2"
-                  disabled={submitting}
-                >
-                  {submitting && (
-                    <svg className="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                    </svg>
-                  )}
-                  Delete Job
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
+    </>
   );
 }
+
+// ─── SHARED ───
+function Ovl({children,onClose}){return<div className="jb-overlay" onClick={onClose} style={{position:'fixed',inset:0,zIndex:100,background:'rgba(0,0,0,.65)',backdropFilter:'blur(8px)',WebkitBackdropFilter:'blur(8px)',display:'flex',alignItems:'center',justifyContent:'center',padding:16}}><div className="jb-modal" onClick={e=>e.stopPropagation()}>{children}</div></div>}
+function MH({grad,title,sub,onClose}){return<div style={{padding:'18px 22px',background:grad,borderRadius:'20px 20px 0 0',position:'relative',overflow:'hidden'}}><div style={{position:'absolute',top:-30,right:-30,width:80,height:80,borderRadius:'50%',background:'rgba(255,255,255,.1)',pointerEvents:'none'}}/><div style={{display:'flex',alignItems:'center',justifyContent:'space-between',position:'relative',zIndex:1}}><div><h2 style={{margin:0,fontSize:17,fontWeight:800,color:'white'}}>{title}</h2><p style={{margin:'3px 0 0',fontSize:12,color:'rgba(255,255,255,.7)'}}>{sub}</p></div><CBtn onClick={onClose}/></div></div>}
+function MF({onCancel,submitting,label,grad,glow,disabled}){return<div style={{display:'flex',gap:10,justifyContent:'flex-end',marginTop:22,paddingTop:18,borderTop:'1px solid rgba(255,255,255,.06)'}}><JBtn onClick={onCancel} label="Cancel" outline color="rgba(255,255,255,.4)" disabled={submitting}/><button type="submit" disabled={submitting||disabled} className="jb-btn" style={{padding:'10px 22px',borderRadius:12,background:grad,border:'none',color:'white',fontSize:13,fontWeight:700,opacity:(submitting||disabled)?.5:1,display:'flex',alignItems:'center',gap:8,boxShadow:`0 4px 14px ${glow}`}}>{submitting&&<Spin/>}{label}</button></div>}
+function Badge({l,icon,c,bg,bd,small,suffix=''}){return<span style={{display:'inline-flex',alignItems:'center',gap:3,padding:small?'2px 8px':'3px 10px',borderRadius:14,background:bg,border:`1px solid ${bd}`,color:c,fontSize:small?10:11,fontWeight:700,whiteSpace:'nowrap',marginTop:small?4:0}}>{icon} {l}{suffix}</span>}
+function JBtn({onClick,label,icon,grad,glow,outline,color,disabled,full,style={}}){return<button onClick={onClick} disabled={disabled} className="jb-btn" style={{padding:'10px 20px',borderRadius:12,fontSize:13,fontWeight:700,background:outline?'transparent':(grad||'rgba(255,255,255,.06)'),border:outline?`1px solid ${color||'rgba(255,255,255,.15)'}`:'none',color:outline?(color||'rgba(255,255,255,.6)'):'white',boxShadow:glow?`0 4px 14px ${glow}`:'none',opacity:disabled?.5:1,display:'inline-flex',alignItems:'center',justifyContent:'center',gap:8,width:full?'100%':'auto',...style}}>{icon&&<span>{icon}</span>}{label}</button>}
+function TBtn({onClick,icon,hc}){const[h,setH]=useState(false);return<button onClick={onClick} onMouseEnter={()=>setH(true)} onMouseLeave={()=>setH(false)} style={{width:32,height:32,borderRadius:8,border:'none',background:h?`${hc}18`:'transparent',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',fontSize:14,transition:'all .2s',transform:h?'scale(1.1)':'scale(1)'}}>{icon}</button>}
+function CBtn({onClick}){return<button onClick={onClick} style={{width:30,height:30,borderRadius:9,background:'rgba(255,255,255,.14)',border:'none',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center'}}><svg style={{width:15,height:15,color:'white'}} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M6 18L18 6M6 6l12 12"/></svg></button>}
+function Spin(){return<div style={{width:15,height:15,border:'2px solid rgba(255,255,255,.2)',borderTopColor:'white',borderRadius:'50%',animation:'jbSpin .6s linear infinite',flexShrink:0}}/>}
+function Loader({text}){return<div style={{display:'flex',justifyContent:'center',padding:'80px 20px'}}><div style={{textAlign:'center'}}><div style={{width:44,height:44,margin:'0 auto 14px',border:'3px solid rgba(255,255,255,.1)',borderTopColor:'#3b82f6',borderRadius:'50%',animation:'jbSpin .8s linear infinite'}}/><p style={{color:'rgba(255,255,255,.4)',fontSize:14,fontWeight:500}}>{text}</p></div></div>}
+function Empty({icon,title,sub,showBtn,onBtn,btnLabel}){return<div className="jb-glass" style={{padding:'60px 24px',textAlign:'center',animation:'jbScaleIn .5s ease'}}><div style={{width:72,height:72,borderRadius:22,background:'rgba(59,130,246,.12)',display:'flex',alignItems:'center',justifyContent:'center',margin:'0 auto 20px',fontSize:32,animation:'jbFloat 3s ease-in-out infinite'}}>{icon}</div><h3 style={{margin:'0 0 8px',fontSize:18,fontWeight:700,color:'white'}}>{title}</h3><p style={{margin:'0 0 24px',fontSize:14,color:'rgba(255,255,255,.4)'}}>{sub}</p>{showBtn&&<JBtn onClick={onBtn} label={btnLabel} grad="linear-gradient(135deg,#3b82f6,#1d4ed8)" glow="rgba(59,130,246,.35)"/>}</div>}

@@ -1,1154 +1,638 @@
-// app/(dashboard)/customers/page.js
+// src/app/(dashboard)/customers/page.js
 'use client';
 
 import { useEffect, useState } from 'react';
 import toast from 'react-hot-toast';
+
+const CSS = `
+  @keyframes cpFadeIn   { from{opacity:0} to{opacity:1} }
+  @keyframes cpSlideUp  { from{opacity:0;transform:translateY(14px)} to{opacity:1;transform:translateY(0)} }
+  @keyframes cpScaleIn  { from{opacity:0;transform:scale(.94)} to{opacity:1;transform:scale(1)} }
+  @keyframes cpSpin     { from{transform:rotate(0)} to{transform:rotate(360deg)} }
+  @keyframes cpFloat    { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-6px)} }
+
+  .cp-card {
+    background: rgba(255,255,255,.04);
+    backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
+    border: 1px solid rgba(255,255,255,.07);
+    border-radius: 18px;
+    transition: all .3s cubic-bezier(.4,0,.2,1);
+  }
+  .cp-card:hover {
+    background: rgba(255,255,255,.06);
+    border-color: rgba(255,255,255,.11);
+  }
+  .cp-input {
+    background: rgba(255,255,255,.05);
+    border: 1px solid rgba(255,255,255,.1);
+    border-radius: 12px;
+    padding: 12px 16px;
+    color: white;
+    font-size: 14px;
+    width: 100%;
+    outline: none;
+    transition: all .25s ease;
+  }
+  .cp-input::placeholder { color: rgba(255,255,255,.3); }
+  .cp-input:focus {
+    border-color: rgba(59,130,246,.5);
+    background: rgba(255,255,255,.07);
+    box-shadow: 0 0 0 3px rgba(59,130,246,.12);
+  }
+  .cp-label {
+    display: block; font-size: 12px; font-weight: 700;
+    color: rgba(255,255,255,.5);
+    margin-bottom: 6px;
+    text-transform: uppercase; letter-spacing: .7px;
+  }
+  .cp-btn { transition: all .22s ease; }
+  .cp-btn:hover { transform: translateY(-1px); }
+  .cp-row { transition: background .2s ease; }
+  .cp-row:hover { background: rgba(255,255,255,.035) !important; }
+  .cp-modal-bg { animation: cpFadeIn .25s ease; }
+  .cp-modal { animation: cpScaleIn .3s cubic-bezier(.4,0,.2,1); }
+  .cp-search {
+    background: rgba(255,255,255,.05);
+    border: 1px solid rgba(255,255,255,.08);
+    border-radius: 12px;
+    padding: 11px 16px 11px 44px;
+    color: white; font-size: 14px;
+    width: 100%; max-width: 380px;
+    outline: none;
+    transition: all .25s ease;
+  }
+  .cp-search::placeholder { color: rgba(255,255,255,.3); }
+  .cp-search:focus {
+    border-color: rgba(59,130,246,.4);
+    background: rgba(255,255,255,.07);
+    box-shadow: 0 0 0 3px rgba(59,130,246,.1);
+  }
+  @media(max-width:768px) {
+    .cp-table-wrap { overflow-x: auto; }
+    .cp-card:hover { transform: none; }
+  }
+`;
+
+const AVATAR_GRADS = [
+  'linear-gradient(135deg,#6366f1,#4f46e5)',
+  'linear-gradient(135deg,#ec4899,#be185d)',
+  'linear-gradient(135deg,#3b82f6,#1d4ed8)',
+  'linear-gradient(135deg,#10b981,#059669)',
+  'linear-gradient(135deg,#f59e0b,#d97706)',
+  'linear-gradient(135deg,#8b5cf6,#6d28d9)',
+];
+
+function avatarGrad(name) {
+  return AVATAR_GRADS[name.charCodeAt(0) % AVATAR_GRADS.length];
+}
+function initials(name) {
+  return name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2);
+}
 
 export default function CustomersPage() {
   const [customers, setCustomers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [submitting, setSubmitting] = useState(false);
-  const [searchTerm, setSearchTerm] = useState('');
+  const [search, setSearch] = useState('');
   const [selectedCustomer, setSelectedCustomer] = useState(null);
-  const [showViewModal, setShowViewModal] = useState(false);
-  const [deleteConfirm, setDeleteConfirm] = useState(null);
+  const [showView, setShowView] = useState(false);
+  const [deleteId, setDeleteId] = useState(null);
   const [formData, setFormData] = useState({
-    name: '',
-    email: '',
-    phone: '',
-    address: '',
-    city: '',
-    state: '',
-    pincode: '',
+    name: '', email: '', phone: '', address: '', city: '', state: '', pincode: '',
   });
 
-  // Styles
-  const styles = {
-    container: {
-      minHeight: '100vh',
-      background: 'linear-gradient(135deg, #f5f7fa 0%, #e4e8ec 100%)',
-      padding: '24px',
-    },
-    header: {
-      display: 'flex',
-      justifyContent: 'space-between',
-      alignItems: 'center',
-      marginBottom: '32px',
-      flexWrap: 'wrap',
-      gap: '16px',
-    },
-    title: {
-      fontSize: '2.25rem',
-      fontWeight: '800',
-      background: 'linear-gradient(135deg, #1e40af 0%, #3b82f6 100%)',
-      WebkitBackgroundClip: 'text',
-      WebkitTextFillColor: 'transparent',
-      margin: 0,
-    },
-    addButton: {
-      display: 'flex',
-      alignItems: 'center',
-      gap: '8px',
-      padding: '12px 24px',
-      background: 'linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)',
-      color: 'white',
-      border: 'none',
-      borderRadius: '12px',
-      fontSize: '1rem',
-      fontWeight: '600',
-      cursor: 'pointer',
-      boxShadow: '0 4px 14px rgba(59, 130, 246, 0.4)',
-      transition: 'all 0.3s ease',
-    },
-    searchContainer: {
-      marginBottom: '24px',
-    },
-    searchInput: {
-      width: '100%',
-      maxWidth: '400px',
-      padding: '14px 20px',
-      paddingLeft: '48px',
-      border: '2px solid #e5e7eb',
-      borderRadius: '12px',
-      fontSize: '1rem',
-      outline: 'none',
-      transition: 'all 0.3s ease',
-      background: 'white',
-      backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='%239ca3af'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z'%3E%3C/path%3E%3C/svg%3E")`,
-      backgroundRepeat: 'no-repeat',
-      backgroundPosition: '16px center',
-      backgroundSize: '20px',
-    },
-    statsContainer: {
-      display: 'grid',
-      gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
-      gap: '20px',
-      marginBottom: '32px',
-    },
-    statCard: {
-      background: 'white',
-      borderRadius: '16px',
-      padding: '24px',
-      boxShadow: '0 4px 20px rgba(0, 0, 0, 0.08)',
-      display: 'flex',
-      alignItems: 'center',
-      gap: '16px',
-      transition: 'transform 0.3s ease, box-shadow 0.3s ease',
-    },
-    statIcon: {
-      width: '56px',
-      height: '56px',
-      borderRadius: '14px',
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-      fontSize: '24px',
-    },
-    statValue: {
-      fontSize: '1.75rem',
-      fontWeight: '700',
-      color: '#1f2937',
-      margin: 0,
-    },
-    statLabel: {
-      fontSize: '0.875rem',
-      color: '#6b7280',
-      margin: 0,
-    },
-    tableCard: {
-      background: 'white',
-      borderRadius: '20px',
-      boxShadow: '0 10px 40px rgba(0, 0, 0, 0.08)',
-      overflow: 'hidden',
-      animation: 'slideUp 0.5s ease',
-    },
-    table: {
-      width: '100%',
-      borderCollapse: 'collapse',
-    },
-    th: {
-      padding: '18px 20px',
-      textAlign: 'left',
-      fontSize: '0.75rem',
-      fontWeight: '700',
-      textTransform: 'uppercase',
-      letterSpacing: '0.05em',
-      color: '#6b7280',
-      background: '#f9fafb',
-      borderBottom: '2px solid #e5e7eb',
-    },
-    td: {
-      padding: '18px 20px',
-      borderBottom: '1px solid #f3f4f6',
-      fontSize: '0.95rem',
-      color: '#374151',
-    },
-    tr: {
-      transition: 'background-color 0.2s ease',
-    },
-    customerName: {
-      fontWeight: '600',
-      color: '#1f2937',
-      display: 'flex',
-      alignItems: 'center',
-      gap: '12px',
-    },
-    avatar: {
-      width: '40px',
-      height: '40px',
-      borderRadius: '10px',
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-      fontWeight: '700',
-      fontSize: '1rem',
-      color: 'white',
-    },
-    badge: {
-      display: 'inline-flex',
-      alignItems: 'center',
-      padding: '6px 12px',
-      borderRadius: '8px',
-      fontSize: '0.875rem',
-      fontWeight: '600',
-    },
-    viewButton: {
-      padding: '8px 16px',
-      background: 'linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)',
-      color: 'white',
-      border: 'none',
-      borderRadius: '8px',
-      fontSize: '0.875rem',
-      fontWeight: '500',
-      cursor: 'pointer',
-      marginRight: '8px',
-      transition: 'all 0.3s ease',
-    },
-    deleteButton: {
-      padding: '8px 16px',
-      background: 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)',
-      color: 'white',
-      border: 'none',
-      borderRadius: '8px',
-      fontSize: '0.875rem',
-      fontWeight: '500',
-      cursor: 'pointer',
-      transition: 'all 0.3s ease',
-    },
-    modalBackdrop: {
-      position: 'fixed',
-      top: 0,
-      left: 0,
-      right: 0,
-      bottom: 0,
-      background: 'rgba(0, 0, 0, 0.6)',
-      backdropFilter: 'blur(4px)',
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-      zIndex: 1000,
-      animation: 'fadeIn 0.3s ease',
-      padding: '20px',
-    },
-    modal: {
-      background: 'white',
-      borderRadius: '24px',
-      width: '100%',
-      maxWidth: '600px',
-      maxHeight: '90vh',
-      overflow: 'auto',
-      boxShadow: '0 25px 50px rgba(0, 0, 0, 0.25)',
-      animation: 'slideUp 0.4s ease',
-    },
-    modalHeader: {
-      padding: '24px 32px',
-      borderBottom: '1px solid #e5e7eb',
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'space-between',
-    },
-    modalTitle: {
-      fontSize: '1.5rem',
-      fontWeight: '700',
-      color: '#1f2937',
-      margin: 0,
-    },
-    closeButton: {
-      width: '40px',
-      height: '40px',
-      borderRadius: '10px',
-      border: 'none',
-      background: '#f3f4f6',
-      cursor: 'pointer',
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-      fontSize: '1.25rem',
-      color: '#6b7280',
-      transition: 'all 0.3s ease',
-    },
-    modalBody: {
-      padding: '32px',
-    },
-    formGrid: {
-      display: 'grid',
-      gridTemplateColumns: 'repeat(2, 1fr)',
-      gap: '20px',
-    },
-    formGroup: {
-      display: 'flex',
-      flexDirection: 'column',
-      gap: '8px',
-    },
-    formGroupFull: {
-      display: 'flex',
-      flexDirection: 'column',
-      gap: '8px',
-      gridColumn: 'span 2',
-    },
-    label: {
-      fontSize: '0.875rem',
-      fontWeight: '600',
-      color: '#374151',
-    },
-    required: {
-      color: '#ef4444',
-    },
-    input: {
-      padding: '14px 16px',
-      border: '2px solid #e5e7eb',
-      borderRadius: '12px',
-      fontSize: '1rem',
-      outline: 'none',
-      transition: 'all 0.3s ease',
-      background: '#fafafa',
-    },
-    inputFocus: {
-      borderColor: '#3b82f6',
-      background: 'white',
-      boxShadow: '0 0 0 4px rgba(59, 130, 246, 0.1)',
-    },
-    modalFooter: {
-      padding: '20px 32px',
-      borderTop: '1px solid #e5e7eb',
-      display: 'flex',
-      gap: '12px',
-      justifyContent: 'flex-end',
-    },
-    cancelButton: {
-      padding: '12px 24px',
-      background: '#f3f4f6',
-      color: '#374151',
-      border: 'none',
-      borderRadius: '12px',
-      fontSize: '1rem',
-      fontWeight: '600',
-      cursor: 'pointer',
-      transition: 'all 0.3s ease',
-    },
-    submitButton: {
-      padding: '12px 32px',
-      background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
-      color: 'white',
-      border: 'none',
-      borderRadius: '12px',
-      fontSize: '1rem',
-      fontWeight: '600',
-      cursor: 'pointer',
-      boxShadow: '0 4px 14px rgba(16, 185, 129, 0.4)',
-      transition: 'all 0.3s ease',
-      display: 'flex',
-      alignItems: 'center',
-      gap: '8px',
-    },
-    loadingSpinner: {
-      width: '48px',
-      height: '48px',
-      border: '4px solid #e5e7eb',
-      borderTopColor: '#3b82f6',
-      borderRadius: '50%',
-      animation: 'spin 1s linear infinite',
-    },
-    emptyState: {
-      textAlign: 'center',
-      padding: '60px 20px',
-      background: 'white',
-      borderRadius: '20px',
-      boxShadow: '0 10px 40px rgba(0, 0, 0, 0.08)',
-    },
-    emptyIcon: {
-      fontSize: '4rem',
-      marginBottom: '16px',
-    },
-    emptyTitle: {
-      fontSize: '1.5rem',
-      fontWeight: '700',
-      color: '#1f2937',
-      marginBottom: '8px',
-    },
-    emptyText: {
-      fontSize: '1rem',
-      color: '#6b7280',
-      marginBottom: '24px',
-    },
-    viewModalContent: {
-      padding: '32px',
-    },
-    viewSection: {
-      marginBottom: '24px',
-    },
-    viewLabel: {
-      fontSize: '0.75rem',
-      fontWeight: '600',
-      textTransform: 'uppercase',
-      letterSpacing: '0.05em',
-      color: '#6b7280',
-      marginBottom: '4px',
-    },
-    viewValue: {
-      fontSize: '1.1rem',
-      fontWeight: '500',
-      color: '#1f2937',
-    },
-    viewGrid: {
-      display: 'grid',
-      gridTemplateColumns: 'repeat(2, 1fr)',
-      gap: '24px',
-    },
-    vehicleCard: {
-      background: '#f9fafb',
-      borderRadius: '12px',
-      padding: '16px',
-      marginTop: '12px',
-    },
-  };
-
-  // CSS Keyframes (inject into head)
-  useEffect(() => {
-    const styleSheet = document.createElement('style');
-    styleSheet.textContent = `
-      @keyframes fadeIn {
-        from { opacity: 0; }
-        to { opacity: 1; }
-      }
-      @keyframes slideUp {
-        from { opacity: 0; transform: translateY(20px); }
-        to { opacity: 1; transform: translateY(0); }
-      }
-      @keyframes spin {
-        from { transform: rotate(0deg); }
-        to { transform: rotate(360deg); }
-      }
-      @keyframes pulse {
-        0%, 100% { transform: scale(1); }
-        50% { transform: scale(1.05); }
-      }
-      @keyframes shimmer {
-        0% { background-position: -200% 0; }
-        100% { background-position: 200% 0; }
-      }
-    `;
-    document.head.appendChild(styleSheet);
-    return () => document.head.removeChild(styleSheet);
-  }, []);
-
-  useEffect(() => {
-    fetchCustomers();
-  }, []);
+  useEffect(() => { fetchCustomers(); }, []);
 
   const fetchCustomers = async () => {
     try {
       setLoading(true);
-      const response = await fetch('/api/customers');
-      const data = await response.json();
-      if (data.success) {
-        setCustomers(data.data || []);
-      } else {
-        toast.error(data.message || 'Failed to load customers');
-      }
-    } catch (error) {
-      console.error('Error fetching customers:', error);
-      toast.error('Failed to load customers');
-    } finally {
-      setLoading(false);
-    }
+      const r = await fetch('/api/customers');
+      const d = await r.json();
+      if (d.success) setCustomers(d.data || []);
+      else toast.error(d.message || 'Failed');
+    } catch { toast.error('Failed to load'); }
+    finally { setLoading(false); }
   };
 
-  const handleChange = (e) => {
-    const { name, value } = e.target;
-    setFormData((prev) => ({ ...prev, [name]: value }));
-  };
+  const handleChange = (e) => setFormData(p => ({ ...p, [e.target.name]: e.target.value }));
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setSubmitting(true);
-    
     try {
-      const response = await fetch('/api/customers', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+      const r = await fetch('/api/customers', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(formData),
       });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        toast.error(data.message || 'Failed to create customer');
-        return;
-      }
-
-      toast.success('🎉 Customer created successfully!', {
-        style: {
-          borderRadius: '12px',
-          background: '#10b981',
-          color: '#fff',
-          fontWeight: '600',
-        },
-      });
-      
-      setFormData({
-        name: '',
-        email: '',
-        phone: '',
-        address: '',
-        city: '',
-        state: '',
-        pincode: '',
-      });
-      setShowModal(false);
-      fetchCustomers();
-    } catch (error) {
-      console.error('Error creating customer:', error);
-      toast.error('An error occurred');
-    } finally {
-      setSubmitting(false);
-    }
+      const d = await r.json();
+      if (!r.ok) { toast.error(d.message || 'Failed'); return; }
+      toast.success('Customer created!');
+      setFormData({ name: '', email: '', phone: '', address: '', city: '', state: '', pincode: '' });
+      setShowModal(false); fetchCustomers();
+    } catch { toast.error('An error occurred'); }
+    finally { setSubmitting(false); }
   };
 
-  const handleDelete = async (customerId) => {
+  const handleDelete = async (id) => {
     try {
-      const response = await fetch(`/api/customers/${customerId}`, {
-        method: 'DELETE',
-      });
-      const data = await response.json();
-      
-      if (data.success) {
-        toast.success('Customer deleted successfully');
-        setDeleteConfirm(null);
-        fetchCustomers();
-      } else {
-        toast.error(data.message || 'Failed to delete customer');
-      }
-    } catch (error) {
-      toast.error('An error occurred');
-    }
+      const r = await fetch(`/api/customers/${id}`, { method: 'DELETE' });
+      const d = await r.json();
+      if (d.success) { toast.success('Deleted'); setDeleteId(null); fetchCustomers(); }
+      else toast.error(d.message || 'Failed');
+    } catch { toast.error('Error'); }
   };
 
-  const filteredCustomers = customers.filter((customer) =>
-    customer.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    customer.phone.includes(searchTerm) ||
-    customer.email?.toLowerCase().includes(searchTerm.toLowerCase())
+  const filtered = customers.filter(c =>
+    c.name.toLowerCase().includes(search.toLowerCase()) ||
+    c.phone.includes(search) ||
+    c.email?.toLowerCase().includes(search.toLowerCase())
   );
 
-  const getAvatarColor = (name) => {
-    const colors = [
-      'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-      'linear-gradient(135deg, #f093fb 0%, #f5576c 100%)',
-      'linear-gradient(135deg, #4facfe 0%, #00f2fe 100%)',
-      'linear-gradient(135deg, #43e97b 0%, #38f9d7 100%)',
-      'linear-gradient(135deg, #fa709a 0%, #fee140 100%)',
-      'linear-gradient(135deg, #a8edea 0%, #fed6e3 100%)',
-    ];
-    const index = name.charCodeAt(0) % colors.length;
-    return colors[index];
-  };
+  const totalVehicles = customers.reduce((a, c) => a + (c.vehicles?.length || 0), 0);
+  const withEmail = customers.filter(c => c.email).length;
 
-  const getInitials = (name) => {
-    return name
-      .split(' ')
-      .map((n) => n[0])
-      .join('')
-      .toUpperCase()
-      .slice(0, 2);
-  };
+  const STATS = [
+    { label: 'Total Customers', v: customers.length, icon: '👥', grad: 'linear-gradient(135deg,#3b82f6,#1d4ed8)', c: '#93c5fd' },
+    { label: 'Total Vehicles', v: totalVehicles, icon: '🚗', grad: 'linear-gradient(135deg,#10b981,#059669)', c: '#6ee7b7' },
+    { label: 'With Email', v: withEmail, icon: '📧', grad: 'linear-gradient(135deg,#f59e0b,#d97706)', c: '#fcd34d' },
+  ];
 
   return (
-    <div style={styles.container}>
-      {/* Header */}
-      <div style={styles.header}>
-        <h1 style={styles.title}>👥 Customers</h1>
-        <button
-          style={styles.addButton}
-          onClick={() => setShowModal(true)}
-          onMouseEnter={(e) => {
-            e.target.style.transform = 'translateY(-2px)';
-            e.target.style.boxShadow = '0 6px 20px rgba(59, 130, 246, 0.5)';
-          }}
-          onMouseLeave={(e) => {
-            e.target.style.transform = 'translateY(0)';
-            e.target.style.boxShadow = '0 4px 14px rgba(59, 130, 246, 0.4)';
-          }}
-        >
-          <span style={{ fontSize: '1.25rem' }}>➕</span>
-          Add Customer
-        </button>
-      </div>
+    <>
+      <style dangerouslySetInnerHTML={{ __html: CSS }} />
 
-      {/* Stats Cards */}
-      <div style={styles.statsContainer}>
-        <div
-          style={styles.statCard}
-          onMouseEnter={(e) => {
-            e.currentTarget.style.transform = 'translateY(-4px)';
-            e.currentTarget.style.boxShadow = '0 8px 30px rgba(0, 0, 0, 0.12)';
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.transform = 'translateY(0)';
-            e.currentTarget.style.boxShadow = '0 4px 20px rgba(0, 0, 0, 0.08)';
-          }}
-        >
-          <div style={{ ...styles.statIcon, background: 'linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)' }}>
-            👥
-          </div>
+      <div style={{ minHeight: '100vh' }}>
+        {/* ─── Header ─── */}
+        <div style={{
+          display: 'flex', alignItems: 'flex-start',
+          justifyContent: 'space-between',
+          flexWrap: 'wrap', gap: 16, marginBottom: 28,
+          animation: 'cpSlideUp .5s ease',
+        }}>
           <div>
-            <p style={styles.statValue}>{customers.length}</p>
-            <p style={styles.statLabel}>Total Customers</p>
-          </div>
-        </div>
-
-        <div
-          style={styles.statCard}
-          onMouseEnter={(e) => {
-            e.currentTarget.style.transform = 'translateY(-4px)';
-            e.currentTarget.style.boxShadow = '0 8px 30px rgba(0, 0, 0, 0.12)';
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.transform = 'translateY(0)';
-            e.currentTarget.style.boxShadow = '0 4px 20px rgba(0, 0, 0, 0.08)';
-          }}
-        >
-          <div style={{ ...styles.statIcon, background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)' }}>
-            🚗
-          </div>
-          <div>
-            <p style={styles.statValue}>
-              {customers.reduce((acc, c) => acc + (c.vehicles?.length || 0), 0)}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4 }}>
+              <span style={{ fontSize: 26 }}>👥</span>
+              <h1 style={{
+                margin: 0, fontSize: 'clamp(1.4rem,4vw,1.8rem)',
+                fontWeight: 800, color: 'white', letterSpacing: '-.5px',
+              }}>Customers</h1>
+            </div>
+            <p style={{ margin: 0, fontSize: 13, color: 'rgba(255,255,255,.4)', fontWeight: 500 }}>
+              Manage your customer database
             </p>
-            <p style={styles.statLabel}>Total Vehicles</p>
           </div>
+          <button onClick={() => setShowModal(true)} className="cp-btn" style={{
+            display: 'flex', alignItems: 'center', gap: 8,
+            padding: '11px 22px', borderRadius: 14,
+            background: 'linear-gradient(135deg,#3b82f6,#1d4ed8)',
+            color: 'white', border: 'none', fontSize: 14, fontWeight: 700,
+            cursor: 'pointer', boxShadow: '0 4px 18px rgba(59,130,246,.35)',
+          }}>
+            <svg style={{ width: 18, height: 18 }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 6v12m6-6H6" />
+            </svg>
+            Add Customer
+          </button>
         </div>
 
-        <div
-          style={styles.statCard}
-          onMouseEnter={(e) => {
-            e.currentTarget.style.transform = 'translateY(-4px)';
-            e.currentTarget.style.boxShadow = '0 8px 30px rgba(0, 0, 0, 0.12)';
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.transform = 'translateY(0)';
-            e.currentTarget.style.boxShadow = '0 4px 20px rgba(0, 0, 0, 0.08)';
-          }}
-        >
-          <div style={{ ...styles.statIcon, background: 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)' }}>
-            📧
+        {/* ─── Stats ─── */}
+        <div style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%,200px), 1fr))',
+          gap: 14, marginBottom: 24,
+        }}>
+          {STATS.map((s, i) => (
+            <div key={s.label} className="cp-card" style={{
+              padding: 'clamp(14px,2vw,20px)',
+              animation: `cpSlideUp .5s ease ${i * .08}s backwards`,
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
+                <div>
+                  <p style={{ margin: 0, fontSize: 10, fontWeight: 700, color: 'rgba(255,255,255,.4)', textTransform: 'uppercase', letterSpacing: '.7px' }}>{s.label}</p>
+                  <p style={{ margin: '6px 0 0', fontSize: 'clamp(1.3rem,3vw,1.8rem)', fontWeight: 800, color: 'white', letterSpacing: '-.5px' }}>{s.v}</p>
+                </div>
+                <div style={{
+                  width: 48, height: 48, borderRadius: 14,
+                  background: s.grad,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  fontSize: 22, flexShrink: 0,
+                  boxShadow: '0 6px 18px rgba(0,0,0,.25)',
+                }}>{s.icon}</div>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {/* ─── Search ─── */}
+        <div style={{ position: 'relative', marginBottom: 20 }}>
+          <svg style={{
+            position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)',
+            width: 18, height: 18, color: 'rgba(255,255,255,.3)', pointerEvents: 'none',
+          }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+              d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+          </svg>
+          <input
+            className="cp-search"
+            placeholder="Search by name, phone, or email..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
+        </div>
+
+        {/* ─── Content ─── */}
+        {loading ? (
+          <div style={{ display: 'flex', justifyContent: 'center', padding: '80px 20px' }}>
+            <div style={{ textAlign: 'center' }}>
+              <div style={{
+                width: 44, height: 44, margin: '0 auto 14px',
+                border: '3px solid rgba(255,255,255,.1)', borderTopColor: '#3b82f6',
+                borderRadius: '50%', animation: 'cpSpin .8s linear infinite',
+              }} />
+              <p style={{ color: 'rgba(255,255,255,.4)', fontSize: 14, fontWeight: 500 }}>Loading...</p>
+            </div>
           </div>
-          <div>
-            <p style={styles.statValue}>
-              {customers.filter((c) => c.email).length}
+        ) : filtered.length === 0 ? (
+          <div className="cp-card" style={{
+            padding: '60px 24px', textAlign: 'center',
+            animation: 'cpScaleIn .5s ease',
+          }}>
+            <div style={{
+              width: 72, height: 72, borderRadius: 22,
+              background: 'rgba(59,130,246,.12)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              margin: '0 auto 20px', fontSize: 32,
+              animation: 'cpFloat 3s ease-in-out infinite',
+            }}>👥</div>
+            <h3 style={{ margin: '0 0 8px', fontSize: 18, fontWeight: 700, color: 'white' }}>
+              {search ? 'No matches found' : 'No customers yet'}
+            </h3>
+            <p style={{ margin: '0 0 24px', fontSize: 14, color: 'rgba(255,255,255,.4)' }}>
+              {search ? 'Try different search terms' : 'Add your first customer'}
             </p>
-            <p style={styles.statLabel}>With Email</p>
+            {!search && (
+              <button onClick={() => setShowModal(true)} className="cp-btn" style={{
+                padding: '11px 24px', borderRadius: 12,
+                background: 'linear-gradient(135deg,#3b82f6,#1d4ed8)',
+                color: 'white', border: 'none', fontSize: 14, fontWeight: 700,
+                cursor: 'pointer',
+              }}>Add Customer</button>
+            )}
           </div>
-        </div>
+        ) : (
+          <div className="cp-card cp-table-wrap" style={{ overflow: 'hidden' }}>
+            <div style={{ overflowX: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 700 }}>
+                <thead>
+                  <tr>
+                    {['Customer', 'Phone', 'Email', 'City', 'Vehicles', 'Actions'].map(h => (
+                      <th key={h} style={{
+                        padding: '14px 18px', textAlign: 'left',
+                        fontSize: 10, fontWeight: 800,
+                        color: 'rgba(255,255,255,.35)',
+                        textTransform: 'uppercase', letterSpacing: '.8px',
+                        borderBottom: '1px solid rgba(255,255,255,.06)',
+                        whiteSpace: 'nowrap',
+                      }}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {filtered.map((c, i) => (
+                    <tr key={c.id} className="cp-row" style={{
+                      animation: `cpSlideUp .35s ease ${i * .03}s backwards`,
+                    }}>
+                      <td style={{
+                        padding: '14px 18px',
+                        borderBottom: '1px solid rgba(255,255,255,.04)',
+                      }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                          <div style={{
+                            width: 38, height: 38, borderRadius: 10,
+                            background: avatarGrad(c.name),
+                            display: 'flex', alignItems: 'center', justifyContent: 'center',
+                            color: 'white', fontSize: 13, fontWeight: 800, flexShrink: 0,
+                          }}>{initials(c.name)}</div>
+                          <span style={{ fontWeight: 700, color: 'white', fontSize: 14 }}>{c.name}</span>
+                        </div>
+                      </td>
+                      <td style={{ padding: '14px 18px', borderBottom: '1px solid rgba(255,255,255,.04)', fontSize: 13, color: 'rgba(255,255,255,.55)', fontFamily: 'monospace' }}>
+                        {c.phone}
+                      </td>
+                      <td style={{ padding: '14px 18px', borderBottom: '1px solid rgba(255,255,255,.04)', fontSize: 13, color: 'rgba(255,255,255,.45)' }}>
+                        {c.email || <span style={{ color: 'rgba(255,255,255,.2)' }}>—</span>}
+                      </td>
+                      <td style={{ padding: '14px 18px', borderBottom: '1px solid rgba(255,255,255,.04)', fontSize: 13, color: 'rgba(255,255,255,.45)' }}>
+                        {c.city || <span style={{ color: 'rgba(255,255,255,.2)' }}>—</span>}
+                      </td>
+                      <td style={{ padding: '14px 18px', borderBottom: '1px solid rgba(255,255,255,.04)' }}>
+                        <span style={{
+                          padding: '4px 10px', borderRadius: 8,
+                          background: (c.vehicles?.length || 0) > 0 ? 'rgba(59,130,246,.12)' : 'rgba(255,255,255,.04)',
+                          border: `1px solid ${(c.vehicles?.length || 0) > 0 ? 'rgba(59,130,246,.2)' : 'rgba(255,255,255,.06)'}`,
+                          color: (c.vehicles?.length || 0) > 0 ? '#93c5fd' : 'rgba(255,255,255,.35)',
+                          fontSize: 12, fontWeight: 700,
+                        }}>
+                          🚗 {c.vehicles?.length || 0}
+                        </span>
+                      </td>
+                      <td style={{ padding: '14px 18px', borderBottom: '1px solid rgba(255,255,255,.04)' }}>
+                        <div style={{ display: 'flex', gap: 6 }}>
+                          <button onClick={() => { setSelectedCustomer(c); setShowView(true); }}
+                            className="cp-btn" style={{
+                              padding: '6px 14px', borderRadius: 8,
+                              background: 'rgba(59,130,246,.12)', border: '1px solid rgba(59,130,246,.2)',
+                              color: '#93c5fd', fontSize: 12, fontWeight: 700,
+                              cursor: 'pointer',
+                            }}>View</button>
+                          <button onClick={() => setDeleteId(c.id)}
+                            className="cp-btn" style={{
+                              padding: '6px 14px', borderRadius: 8,
+                              background: 'rgba(239,68,68,.08)', border: '1px solid rgba(239,68,68,.15)',
+                              color: '#fca5a5', fontSize: 12, fontWeight: 700,
+                              cursor: 'pointer',
+                            }}>Delete</button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
       </div>
 
-      {/* Search */}
-      <div style={styles.searchContainer}>
-        <input
-          type="text"
-          placeholder="Search by name, phone, or email..."
-          value={searchTerm}
-          onChange={(e) => setSearchTerm(e.target.value)}
-          style={styles.searchInput}
-          onFocus={(e) => {
-            e.target.style.borderColor = '#3b82f6';
-            e.target.style.boxShadow = '0 0 0 4px rgba(59, 130, 246, 0.1)';
-          }}
-          onBlur={(e) => {
-            e.target.style.borderColor = '#e5e7eb';
-            e.target.style.boxShadow = 'none';
-          }}
-        />
-      </div>
-
-      {/* Content */}
-      {loading ? (
-        <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '60px' }}>
-          <div style={styles.loadingSpinner}></div>
-        </div>
-      ) : filteredCustomers.length === 0 ? (
-        <div style={styles.emptyState}>
-          <div style={styles.emptyIcon}>👥</div>
-          <h3 style={styles.emptyTitle}>
-            {searchTerm ? 'No customers found' : 'No customers yet'}
-          </h3>
-          <p style={styles.emptyText}>
-            {searchTerm
-              ? 'Try adjusting your search terms'
-              : 'Create your first customer to get started!'}
-          </p>
-          {!searchTerm && (
-            <button
-              style={styles.addButton}
-              onClick={() => setShowModal(true)}
-            >
-              ➕ Add Your First Customer
-            </button>
-          )}
-        </div>
-      ) : (
-        <div style={styles.tableCard}>
-          <table style={styles.table}>
-            <thead>
-              <tr>
-                <th style={styles.th}>Customer</th>
-                <th style={styles.th}>Phone</th>
-                <th style={styles.th}>Email</th>
-                <th style={styles.th}>City</th>
-                <th style={styles.th}>Vehicles</th>
-                <th style={styles.th}>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filteredCustomers.map((customer, index) => (
-                <tr
-                  key={customer.id}
-                  style={{
-                    ...styles.tr,
-                    animation: `slideUp 0.3s ease ${index * 0.05}s both`,
-                  }}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.backgroundColor = '#f9fafb';
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.backgroundColor = 'transparent';
-                  }}
-                >
-                  <td style={styles.td}>
-                    <div style={styles.customerName}>
-                      <div
-                        style={{
-                          ...styles.avatar,
-                          background: getAvatarColor(customer.name),
-                        }}
-                      >
-                        {getInitials(customer.name)}
-                      </div>
-                      {customer.name}
-                    </div>
-                  </td>
-                  <td style={styles.td}>
-                    <span style={{ fontFamily: 'monospace', fontWeight: '500' }}>
-                      {customer.phone}
-                    </span>
-                  </td>
-                  <td style={styles.td}>
-                    {customer.email || (
-                      <span style={{ color: '#9ca3af' }}>—</span>
-                    )}
-                  </td>
-                  <td style={styles.td}>
-                    {customer.city || (
-                      <span style={{ color: '#9ca3af' }}>—</span>
-                    )}
-                  </td>
-                  <td style={styles.td}>
-                    <span
-                      style={{
-                        ...styles.badge,
-                        background: customer.vehicles?.length > 0
-                          ? 'linear-gradient(135deg, #dbeafe 0%, #bfdbfe 100%)'
-                          : '#f3f4f6',
-                        color: customer.vehicles?.length > 0 ? '#1e40af' : '#6b7280',
-                      }}
-                    >
-                      🚗 {customer.vehicles?.length || 0}
-                    </span>
-                  </td>
-                  <td style={styles.td}>
-                    <button
-                      style={styles.viewButton}
-                      onClick={() => {
-                        setSelectedCustomer(customer);
-                        setShowViewModal(true);
-                      }}
-                      onMouseEnter={(e) => {
-                        e.target.style.transform = 'scale(1.05)';
-                      }}
-                      onMouseLeave={(e) => {
-                        e.target.style.transform = 'scale(1)';
-                      }}
-                    >
-                      👁️ View
-                    </button>
-                    <button
-                      style={styles.deleteButton}
-                      onClick={() => setDeleteConfirm(customer.id)}
-                      onMouseEnter={(e) => {
-                        e.target.style.transform = 'scale(1.05)';
-                      }}
-                      onMouseLeave={(e) => {
-                        e.target.style.transform = 'scale(1)';
-                      }}
-                    >
-                      🗑️ Delete
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-
-      {/* Add Customer Modal */}
+      {/* ─── Add Customer Modal ─── */}
       {showModal && (
-        <div style={styles.modalBackdrop} onClick={() => setShowModal(false)}>
-          <div style={styles.modal} onClick={(e) => e.stopPropagation()}>
-            <div style={styles.modalHeader}>
-              <h2 style={styles.modalTitle}>➕ Add New Customer</h2>
-              <button
-                style={styles.closeButton}
-                onClick={() => setShowModal(false)}
-                onMouseEnter={(e) => {
-                  e.target.style.background = '#e5e7eb';
-                  e.target.style.color = '#1f2937';
-                }}
-                onMouseLeave={(e) => {
-                  e.target.style.background = '#f3f4f6';
-                  e.target.style.color = '#6b7280';
-                }}
-              >
-                ✕
-              </button>
+        <ModalBg onClose={() => setShowModal(false)}>
+          <div style={{ maxWidth: 540, width: '100%' }}>
+            <div style={{
+              padding: '20px 24px',
+              background: 'linear-gradient(135deg,#3b82f6,#1d4ed8)',
+              borderRadius: '20px 20px 0 0',
+              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+            }}>
+              <h2 style={{ margin: 0, fontSize: 18, fontWeight: 800, color: 'white' }}>
+                ➕ Add New Customer
+              </h2>
+              <CloseBtn onClick={() => setShowModal(false)} />
             </div>
 
-            <form onSubmit={handleSubmit}>
-              <div style={styles.modalBody}>
-                <div style={styles.formGrid}>
-                  <div style={styles.formGroup}>
-                    <label style={styles.label}>
-                      Name <span style={styles.required}>*</span>
-                    </label>
-                    <input
-                      type="text"
-                      name="name"
-                      value={formData.name}
-                      onChange={handleChange}
-                      style={styles.input}
-                      onFocus={(e) => Object.assign(e.target.style, styles.inputFocus)}
-                      onBlur={(e) => {
-                        e.target.style.borderColor = '#e5e7eb';
-                        e.target.style.background = '#fafafa';
-                        e.target.style.boxShadow = 'none';
-                      }}
-                      placeholder="John Doe"
-                      required
-                    />
-                  </div>
-
-                  <div style={styles.formGroup}>
-                    <label style={styles.label}>
-                      Phone <span style={styles.required}>*</span>
-                    </label>
-                    <input
-                      type="tel"
-                      name="phone"
-                      value={formData.phone}
-                      onChange={handleChange}
-                      style={styles.input}
-                      onFocus={(e) => Object.assign(e.target.style, styles.inputFocus)}
-                      onBlur={(e) => {
-                        e.target.style.borderColor = '#e5e7eb';
-                        e.target.style.background = '#fafafa';
-                        e.target.style.boxShadow = 'none';
-                      }}
-                      placeholder="+1 234 567 8900"
-                      required
-                    />
-                  </div>
-
-                  <div style={styles.formGroupFull}>
-                    <label style={styles.label}>Email</label>
-                    <input
-                      type="email"
-                      name="email"
-                      value={formData.email}
-                      onChange={handleChange}
-                      style={styles.input}
-                      onFocus={(e) => Object.assign(e.target.style, styles.inputFocus)}
-                      onBlur={(e) => {
-                        e.target.style.borderColor = '#e5e7eb';
-                        e.target.style.background = '#fafafa';
-                        e.target.style.boxShadow = 'none';
-                      }}
-                      placeholder="john@example.com"
-                    />
-                  </div>
-
-                  <div style={styles.formGroupFull}>
-                    <label style={styles.label}>Address</label>
-                    <input
-                      type="text"
-                      name="address"
-                      value={formData.address}
-                      onChange={handleChange}
-                      style={styles.input}
-                      onFocus={(e) => Object.assign(e.target.style, styles.inputFocus)}
-                      onBlur={(e) => {
-                        e.target.style.borderColor = '#e5e7eb';
-                        e.target.style.background = '#fafafa';
-                        e.target.style.boxShadow = 'none';
-                      }}
-                      placeholder="123 Main Street"
-                    />
-                  </div>
-
-                  <div style={styles.formGroup}>
-                    <label style={styles.label}>City</label>
-                    <input
-                      type="text"
-                      name="city"
-                      value={formData.city}
-                      onChange={handleChange}
-                      style={styles.input}
-                      onFocus={(e) => Object.assign(e.target.style, styles.inputFocus)}
-                      onBlur={(e) => {
-                        e.target.style.borderColor = '#e5e7eb';
-                        e.target.style.background = '#fafafa';
-                        e.target.style.boxShadow = 'none';
-                      }}
-                      placeholder="New York"
-                    />
-                  </div>
-
-                  <div style={styles.formGroup}>
-                    <label style={styles.label}>State</label>
-                    <input
-                      type="text"
-                      name="state"
-                      value={formData.state}
-                      onChange={handleChange}
-                      style={styles.input}
-                      onFocus={(e) => Object.assign(e.target.style, styles.inputFocus)}
-                      onBlur={(e) => {
-                        e.target.style.borderColor = '#e5e7eb';
-                        e.target.style.background = '#fafafa';
-                        e.target.style.boxShadow = 'none';
-                      }}
-                      placeholder="NY"
-                    />
-                  </div>
-
-                  <div style={styles.formGroup}>
-                    <label style={styles.label}>Pincode</label>
-                    <input
-                      type="text"
-                      name="pincode"
-                      value={formData.pincode}
-                      onChange={handleChange}
-                      style={styles.input}
-                      onFocus={(e) => Object.assign(e.target.style, styles.inputFocus)}
-                      onBlur={(e) => {
-                        e.target.style.borderColor = '#e5e7eb';
-                        e.target.style.background = '#fafafa';
-                        e.target.style.boxShadow = 'none';
-                      }}
-                      placeholder="10001"
-                    />
-                  </div>
+            <form onSubmit={handleSubmit} style={{
+              padding: 24,
+              background: 'rgba(15,23,42,.97)',
+              borderRadius: '0 0 20px 20px',
+              border: '1px solid rgba(255,255,255,.06)',
+              borderTop: 'none',
+            }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2,1fr)', gap: 16 }}>
+                <div>
+                  <label className="cp-label">Name <span style={{ color: '#3b82f6' }}>*</span></label>
+                  <input className="cp-input" name="name" value={formData.name} onChange={handleChange} placeholder="Customer Name" required />
+                </div>
+                <div>
+                  <label className="cp-label">Phone <span style={{ color: '#3b82f6' }}>*</span></label>
+                  <input className="cp-input" name="phone" value={formData.phone} onChange={handleChange} placeholder="+91 98765 43210" required />
+                </div>
+                <div style={{ gridColumn: 'span 2' }}>
+                  <label className="cp-label">Email</label>
+                  <input className="cp-input" type="email" name="email" value={formData.email} onChange={handleChange} placeholder="custmer@mail.com" />
+                </div>
+                <div style={{ gridColumn: 'span 2' }}>
+                  <label className="cp-label">Address</label>
+                  <input className="cp-input" name="address" value={formData.address} onChange={handleChange} placeholder="123 Main Street" />
+                </div>
+                <div>
+                  <label className="cp-label">City</label>
+                  <input className="cp-input" name="city" value={formData.city} onChange={handleChange} placeholder="Guntur" />
+                </div>
+                <div>
+                  <label className="cp-label">State</label>
+                  <input className="cp-input" name="state" value={formData.state} onChange={handleChange} placeholder="AP" />
+                </div>
+                <div>
+                  <label className="cp-label">Pincode</label>
+                  <input className="cp-input" name="pincode" value={formData.pincode} onChange={handleChange} placeholder="522002" />
                 </div>
               </div>
 
-              <div style={styles.modalFooter}>
-                <button
-                  type="button"
-                  style={styles.cancelButton}
-                  onClick={() => setShowModal(false)}
-                  onMouseEnter={(e) => {
-                    e.target.style.background = '#e5e7eb';
-                  }}
-                  onMouseLeave={(e) => {
-                    e.target.style.background = '#f3f4f6';
-                  }}
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  style={{
-                    ...styles.submitButton,
-                    opacity: submitting ? 0.7 : 1,
-                    cursor: submitting ? 'not-allowed' : 'pointer',
-                  }}
-                  disabled={submitting}
-                  onMouseEnter={(e) => {
-                    if (!submitting) {
-                      e.target.style.transform = 'translateY(-2px)';
-                      e.target.style.boxShadow = '0 6px 20px rgba(16, 185, 129, 0.5)';
-                    }
-                  }}
-                  onMouseLeave={(e) => {
-                    e.target.style.transform = 'translateY(0)';
-                    e.target.style.boxShadow = '0 4px 14px rgba(16, 185, 129, 0.4)';
-                  }}
-                >
-                  {submitting ? (
-                    <>
-                      <div
-                        style={{
-                          width: '20px',
-                          height: '20px',
-                          border: '2px solid rgba(255,255,255,0.3)',
-                          borderTopColor: 'white',
-                          borderRadius: '50%',
-                          animation: 'spin 1s linear infinite',
-                        }}
-                      ></div>
-                      Creating...
-                    </>
-                  ) : (
-                    <>✓ Create Customer</>
-                  )}
+              <div style={{
+                display: 'flex', gap: 10, justifyContent: 'flex-end',
+                marginTop: 26, paddingTop: 18,
+                borderTop: '1px solid rgba(255,255,255,.06)',
+              }}>
+                <button type="button" onClick={() => setShowModal(false)}
+                  className="cp-btn" style={{
+                    padding: '10px 20px', borderRadius: 12,
+                    background: 'rgba(255,255,255,.06)',
+                    border: '1px solid rgba(255,255,255,.1)',
+                    color: 'rgba(255,255,255,.6)', fontSize: 13, fontWeight: 600,
+                    cursor: 'pointer',
+                  }}>Cancel</button>
+                <button type="submit" disabled={submitting} className="cp-btn" style={{
+                  padding: '10px 24px', borderRadius: 12,
+                  background: 'linear-gradient(135deg,#10b981,#059669)',
+                  border: 'none', color: 'white', fontSize: 13, fontWeight: 700,
+                  cursor: submitting ? 'wait' : 'pointer',
+                  opacity: submitting ? .7 : 1,
+                  display: 'flex', alignItems: 'center', gap: 8,
+                  boxShadow: '0 4px 14px rgba(16,185,129,.3)',
+                }}>
+                  {submitting && <SmallSpinner />}
+                  {submitting ? 'Creating...' : '✓ Create Customer'}
                 </button>
               </div>
             </form>
           </div>
-        </div>
+        </ModalBg>
       )}
 
-      {/* View Customer Modal */}
-      {showViewModal && selectedCustomer && (
-        <div style={styles.modalBackdrop} onClick={() => setShowViewModal(false)}>
-          <div style={styles.modal} onClick={(e) => e.stopPropagation()}>
-            <div style={styles.modalHeader}>
-              <h2 style={styles.modalTitle}>👤 Customer Details</h2>
-              <button
-                style={styles.closeButton}
-                onClick={() => setShowViewModal(false)}
-              >
-                ✕
-              </button>
+      {/* ─── View Modal ─── */}
+      {showView && selectedCustomer && (
+        <ModalBg onClose={() => setShowView(false)}>
+          <div style={{
+            maxWidth: 500, width: '100%',
+            background: 'rgba(15,23,42,.97)',
+            borderRadius: 20,
+            border: '1px solid rgba(255,255,255,.06)',
+            overflow: 'hidden',
+          }}>
+            {/* header */}
+            <div style={{
+              padding: '20px 24px',
+              borderBottom: '1px solid rgba(255,255,255,.06)',
+              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+            }}>
+              <h2 style={{ margin: 0, fontSize: 17, fontWeight: 800, color: 'white' }}>
+                Customer Details
+              </h2>
+              <CloseBtn onClick={() => setShowView(false)} />
             </div>
 
-            <div style={styles.viewModalContent}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '16px', marginBottom: '32px' }}>
-                <div
-                  style={{
-                    width: '72px',
-                    height: '72px',
-                    borderRadius: '16px',
-                    background: getAvatarColor(selectedCustomer.name),
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    color: 'white',
-                    fontSize: '1.5rem',
-                    fontWeight: '700',
-                  }}
-                >
-                  {getInitials(selectedCustomer.name)}
-                </div>
+            <div style={{ padding: 24 }}>
+              {/* avatar + name */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 24 }}>
+                <div style={{
+                  width: 56, height: 56, borderRadius: 16,
+                  background: avatarGrad(selectedCustomer.name),
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  color: 'white', fontSize: 20, fontWeight: 800, flexShrink: 0,
+                }}>{initials(selectedCustomer.name)}</div>
                 <div>
-                  <h3 style={{ margin: 0, fontSize: '1.5rem', fontWeight: '700', color: '#1f2937' }}>
+                  <h3 style={{ margin: 0, fontSize: 18, fontWeight: 800, color: 'white' }}>
                     {selectedCustomer.name}
                   </h3>
-                  <p style={{ margin: '4px 0 0', color: '#6b7280' }}>
-                    Customer since {new Date(selectedCustomer.createdAt).toLocaleDateString()}
+                  <p style={{ margin: '2px 0 0', fontSize: 12, color: 'rgba(255,255,255,.4)' }}>
+                    Since {new Date(selectedCustomer.createdAt).toLocaleDateString('en-IN')}
                   </p>
                 </div>
               </div>
 
-              <div style={styles.viewGrid}>
-                <div style={styles.viewSection}>
-                  <p style={styles.viewLabel}>📱 Phone</p>
-                  <p style={styles.viewValue}>{selectedCustomer.phone}</p>
-                </div>
-
-                <div style={styles.viewSection}>
-                  <p style={styles.viewLabel}>📧 Email</p>
-                  <p style={styles.viewValue}>{selectedCustomer.email || '—'}</p>
-                </div>
-
-                <div style={styles.viewSection}>
-                  <p style={styles.viewLabel}>📍 Address</p>
-                  <p style={styles.viewValue}>{selectedCustomer.address || '—'}</p>
-                </div>
-
-                <div style={styles.viewSection}>
-                  <p style={styles.viewLabel}>🏙️ City</p>
-                  <p style={styles.viewValue}>{selectedCustomer.city || '—'}</p>
-                </div>
-
-                <div style={styles.viewSection}>
-                  <p style={styles.viewLabel}>🗺️ State</p>
-                  <p style={styles.viewValue}>{selectedCustomer.state || '—'}</p>
-                </div>
-
-                <div style={styles.viewSection}>
-                  <p style={styles.viewLabel}>📮 Pincode</p>
-                  <p style={styles.viewValue}>{selectedCustomer.pincode || '—'}</p>
-                </div>
+              {/* info grid */}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2,1fr)', gap: 16, marginBottom: 20 }}>
+                {[
+                  { icon: '📱', label: 'Phone', val: selectedCustomer.phone },
+                  { icon: '📧', label: 'Email', val: selectedCustomer.email },
+                  { icon: '📍', label: 'Address', val: selectedCustomer.address },
+                  { icon: '🏙️', label: 'City', val: selectedCustomer.city },
+                  { icon: '🗺️', label: 'State', val: selectedCustomer.state },
+                  { icon: '📮', label: 'Pincode', val: selectedCustomer.pincode },
+                ].map(f => (
+                  <div key={f.label}>
+                    <p style={{ margin: '0 0 3px', fontSize: 10, color: 'rgba(255,255,255,.35)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.5px' }}>
+                      {f.icon} {f.label}
+                    </p>
+                    <p style={{ margin: 0, fontSize: 14, fontWeight: 600, color: f.val ? 'white' : 'rgba(255,255,255,.2)' }}>
+                      {f.val || '—'}
+                    </p>
+                  </div>
+                ))}
               </div>
 
-              {selectedCustomer.vehicles && selectedCustomer.vehicles.length > 0 && (
-                <div style={{ marginTop: '24px' }}>
-                  <p style={{ ...styles.viewLabel, marginBottom: '12px' }}>🚗 Vehicles ({selectedCustomer.vehicles.length})</p>
-                  {selectedCustomer.vehicles.map((vehicle) => (
-                    <div key={vehicle.id} style={styles.vehicleCard}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              {/* vehicles */}
+              {selectedCustomer.vehicles?.length > 0 && (
+                <div>
+                  <p style={{ margin: '0 0 10px', fontSize: 10, color: 'rgba(255,255,255,.35)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.5px' }}>
+                    🚗 Vehicles ({selectedCustomer.vehicles.length})
+                  </p>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    {selectedCustomer.vehicles.map(v => (
+                      <div key={v.id} style={{
+                        padding: '10px 14px', borderRadius: 12,
+                        background: 'rgba(255,255,255,.03)',
+                        border: '1px solid rgba(255,255,255,.05)',
+                        display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                      }}>
                         <div>
-                          <p style={{ margin: 0, fontWeight: '600', color: '#1f2937' }}>
-                            {vehicle.make} {vehicle.model} ({vehicle.year})
+                          <p style={{ margin: 0, fontWeight: 700, color: 'white', fontSize: 13 }}>
+                            {v.make} {v.model} ({v.year})
                           </p>
-                          <p style={{ margin: '4px 0 0', fontSize: '0.875rem', color: '#6b7280' }}>
-                            {vehicle.licensePlate}
+                          <p style={{ margin: '2px 0 0', fontSize: 12, color: 'rgba(255,255,255,.4)' }}>
+                            {v.licensePlate}
                           </p>
                         </div>
-                        {vehicle.color && (
-                          <span
-                            style={{
-                              padding: '4px 12px',
-                              background: '#f3f4f6',
-                              borderRadius: '6px',
-                              fontSize: '0.875rem',
-                              color: '#374151',
-                            }}
-                          >
-                            {vehicle.color}
-                          </span>
+                        {v.color && (
+                          <span style={{
+                            padding: '3px 10px', borderRadius: 6,
+                            background: 'rgba(255,255,255,.06)',
+                            border: '1px solid rgba(255,255,255,.08)',
+                            fontSize: 11, fontWeight: 600, color: 'rgba(255,255,255,.5)',
+                          }}>{v.color}</span>
                         )}
                       </div>
-                    </div>
-                  ))}
+                    ))}
+                  </div>
                 </div>
               )}
             </div>
           </div>
-        </div>
+        </ModalBg>
       )}
 
-      {/* Delete Confirmation Modal */}
-      {deleteConfirm && (
-        <div style={styles.modalBackdrop} onClick={() => setDeleteConfirm(null)}>
-          <div
-            style={{
-              ...styles.modal,
-              maxWidth: '400px',
-              textAlign: 'center',
-            }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div style={{ padding: '32px' }}>
-              <div
-                style={{
-                  width: '64px',
-                  height: '64px',
-                  borderRadius: '50%',
-                  background: 'linear-gradient(135deg, #fef2f2 0%, #fee2e2 100%)',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  margin: '0 auto 24px',
-                  fontSize: '2rem',
-                }}
-              >
-                ⚠️
-              </div>
-              <h3 style={{ margin: '0 0 8px', fontSize: '1.5rem', fontWeight: '700', color: '#1f2937' }}>
-                Delete Customer?
-              </h3>
-              <p style={{ margin: '0 0 24px', color: '#6b7280' }}>
-                This action cannot be undone. All data associated with this customer will be permanently deleted.
-              </p>
-              <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
-                <button
-                  style={styles.cancelButton}
-                  onClick={() => setDeleteConfirm(null)}
-                >
-                  Cancel
-                </button>
-                <button
-                  style={styles.deleteButton}
-                  onClick={() => handleDelete(deleteConfirm)}
-                >
-                  🗑️ Delete
-                </button>
-              </div>
+      {/* ─── Delete Confirm ─── */}
+      {deleteId && (
+        <ModalBg onClose={() => setDeleteId(null)}>
+          <div style={{
+            maxWidth: 380, width: '100%',
+            background: 'rgba(15,23,42,.97)',
+            borderRadius: 20,
+            border: '1px solid rgba(255,255,255,.06)',
+            padding: 28, textAlign: 'center',
+          }}>
+            <div style={{
+              width: 60, height: 60, borderRadius: '50%',
+              background: 'rgba(239,68,68,.12)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              margin: '0 auto 18px', fontSize: 28,
+            }}>⚠️</div>
+            <h3 style={{ margin: '0 0 8px', fontSize: 18, fontWeight: 800, color: 'white' }}>
+              Delete Customer?
+            </h3>
+            <p style={{ margin: '0 0 24px', fontSize: 13, color: 'rgba(255,255,255,.45)' }}>
+              This action cannot be undone.
+            </p>
+            <div style={{ display: 'flex', gap: 10 }}>
+              <button onClick={() => setDeleteId(null)} className="cp-btn" style={{
+                flex: 1, padding: '10px 0', borderRadius: 12,
+                background: 'rgba(255,255,255,.06)',
+                border: '1px solid rgba(255,255,255,.1)',
+                color: 'rgba(255,255,255,.6)', fontSize: 13, fontWeight: 600,
+                cursor: 'pointer',
+              }}>Cancel</button>
+              <button onClick={() => handleDelete(deleteId)} className="cp-btn" style={{
+                flex: 1, padding: '10px 0', borderRadius: 12,
+                background: 'linear-gradient(135deg,#ef4444,#dc2626)',
+                border: 'none', color: 'white', fontSize: 13, fontWeight: 700,
+                cursor: 'pointer',
+              }}>Delete</button>
             </div>
           </div>
-        </div>
+        </ModalBg>
       )}
+    </>
+  );
+}
+
+// ─── Shared ───
+function ModalBg({ children, onClose }) {
+  return (
+    <div className="cp-modal-bg" onClick={onClose} style={{
+      position: 'fixed', inset: 0, zIndex: 100,
+      background: 'rgba(0,0,0,.65)',
+      backdropFilter: 'blur(8px)', WebkitBackdropFilter: 'blur(8px)',
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+      padding: 16,
+    }}>
+      <div className="cp-modal" onClick={(e) => e.stopPropagation()}>
+        {children}
+      </div>
     </div>
   );
+}
+
+function CloseBtn({ onClick }) {
+  return (
+    <button onClick={onClick} style={{
+      width: 30, height: 30, borderRadius: 8,
+      background: 'rgba(255,255,255,.12)', border: 'none',
+      cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
+    }}>
+      <svg style={{ width: 14, height: 14, color: 'white' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M6 18L18 6M6 6l12 12" />
+      </svg>
+    </button>
+  );
+}
+
+function SmallSpinner() {
+  return <div style={{
+    width: 16, height: 16,
+    border: '2px solid rgba(255,255,255,.2)',
+    borderTopColor: 'white',
+    borderRadius: '50%',
+    animation: 'cpSpin .6s linear infinite',
+    flexShrink: 0,
+  }} />;
 }

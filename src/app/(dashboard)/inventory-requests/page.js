@@ -4,6 +4,108 @@
 import { useEffect, useState, useCallback } from 'react';
 import toast from 'react-hot-toast';
 
+// ─── CSS ───
+const CSS = `
+  @keyframes irSlideUp  { from{opacity:0;transform:translateY(14px)} to{opacity:1;transform:translateY(0)} }
+  @keyframes irScaleIn  { from{opacity:0;transform:scale(.94)} to{opacity:1;transform:scale(1)} }
+  @keyframes irFadeIn   { from{opacity:0} to{opacity:1} }
+  @keyframes irSpin     { from{transform:rotate(0)} to{transform:rotate(360deg)} }
+  @keyframes irFloat    { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-6px)} }
+  @keyframes irPulse    { 0%,100%{box-shadow:0 0 0 0 rgba(245,158,11,.3)} 50%{box-shadow:0 0 0 8px rgba(245,158,11,0)} }
+
+  .ir-glass {
+    background: rgba(255,255,255,.04);
+    backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
+    border: 1px solid rgba(255,255,255,.07);
+    border-radius: 18px;
+    transition: all .3s cubic-bezier(.4,0,.2,1);
+  }
+  .ir-glass:hover {
+    background: rgba(255,255,255,.06);
+    border-color: rgba(255,255,255,.11);
+  }
+  .ir-card-hover:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 16px 40px rgba(0,0,0,.35);
+  }
+  .ir-stat:hover { transform: translateY(-4px); box-shadow: 0 20px 48px rgba(0,0,0,.35); }
+  .ir-stat:hover .ir-stat-icon { transform: scale(1.12) rotate(6deg); }
+  .ir-btn { transition: all .22s ease; cursor: pointer; }
+  .ir-btn:hover { transform: translateY(-1px); }
+  .ir-btn:active { transform: translateY(0) scale(.98); }
+  .ir-overlay { animation: irFadeIn .25s ease; }
+  .ir-modal { animation: irScaleIn .3s cubic-bezier(.4,0,.2,1); }
+
+  .ir-input {
+    background: rgba(255,255,255,.05);
+    border: 1px solid rgba(255,255,255,.1);
+    border-radius: 12px;
+    padding: 11px 14px;
+    color: white; font-size: 14px;
+    width: 100%; outline: none;
+    transition: all .22s ease;
+  }
+  .ir-input::placeholder { color: rgba(255,255,255,.28); }
+  .ir-input:focus {
+    border-color: rgba(20,184,166,.5);
+    background: rgba(255,255,255,.07);
+    box-shadow: 0 0 0 3px rgba(20,184,166,.12);
+  }
+  .ir-select {
+    background: rgba(255,255,255,.05);
+    border: 1px solid rgba(255,255,255,.1);
+    border-radius: 12px;
+    padding: 11px 14px;
+    color: white; font-size: 14px;
+    width: 100%; outline: none;
+    appearance: none; cursor: pointer;
+    transition: all .22s ease;
+  }
+  .ir-select option { background: #1a1f35; color: white; }
+  .ir-select:focus {
+    border-color: rgba(20,184,166,.5);
+    box-shadow: 0 0 0 3px rgba(20,184,166,.12);
+  }
+  .ir-label {
+    display: block; font-size: 11px; font-weight: 700;
+    color: rgba(255,255,255,.45);
+    margin-bottom: 6px;
+    text-transform: uppercase; letter-spacing: .7px;
+  }
+
+  input[type=number]::-webkit-inner-spin-button,
+  input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+  input[type=number] { -moz-appearance: textfield; }
+
+  @media(max-width:768px) {
+    .ir-stat:hover { transform: none; }
+    .ir-stat:hover .ir-stat-icon { transform: none; }
+    .ir-card-hover:hover { transform: none; }
+  }
+`;
+
+// ─── Status / Urgency configs ───
+const STATUS_CFG = {
+  PENDING:             { label: 'Pending',  icon: '⏳', c: '#fcd34d', bg: 'rgba(245,158,11,.12)', border: 'rgba(245,158,11,.25)' },
+  APPROVED:            { label: 'Approved', icon: '✅', c: '#6ee7b7', bg: 'rgba(16,185,129,.12)', border: 'rgba(16,185,129,.25)' },
+  PARTIALLY_APPROVED:  { label: 'Partial',  icon: '⚡', c: '#93c5fd', bg: 'rgba(59,130,246,.12)', border: 'rgba(59,130,246,.25)' },
+  REJECTED:            { label: 'Rejected', icon: '❌', c: '#fca5a5', bg: 'rgba(239,68,68,.12)',  border: 'rgba(239,68,68,.25)' },
+  CANCELLED:           { label: 'Cancelled',icon: '🚫', c: 'rgba(255,255,255,.4)', bg: 'rgba(255,255,255,.05)', border: 'rgba(255,255,255,.1)' },
+};
+
+const URGENCY_CFG = {
+  LOW:    { label: 'Low',    icon: '🔵', c: '#93c5fd' },
+  MEDIUM: { label: 'Medium', icon: '🟡', c: '#fcd34d' },
+  HIGH:   { label: 'High',   icon: '🟠', c: '#fb923c' },
+  URGENT: { label: 'Urgent', icon: '🔴', c: '#fca5a5' },
+};
+
+const getSC = (s) => STATUS_CFG[s] || STATUS_CFG.PENDING;
+const getUC = (u) => URGENCY_CFG[u] || URGENCY_CFG.MEDIUM;
+
+// ══════════════════════════════════════════════
+// MAIN PAGE
+// ══════════════════════════════════════════════
 export default function InventoryRequestsPage() {
   const [requests, setRequests] = useState([]);
   const [jobs, setJobs] = useState([]);
@@ -12,397 +114,215 @@ export default function InventoryRequestsPage() {
   const [currentUser, setCurrentUser] = useState(null);
   const [isMobile, setIsMobile] = useState(false);
 
-  // Modal states
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showDetailModal, setShowDetailModal] = useState(false);
   const [showApproveModal, setShowApproveModal] = useState(false);
+  const [showCancelConfirm, setShowCancelConfirm] = useState(null);
   const [selectedRequest, setSelectedRequest] = useState(null);
   const [submitting, setSubmitting] = useState(false);
 
-  // Filters
-  const [filters, setFilters] = useState({
-    status: '',
-  });
+  const [filters, setFilters] = useState({ status: '' });
 
-  // Form data for creating request
   const [formData, setFormData] = useState({
-    jobId: '',
-    notes: '',
-    urgency: 'MEDIUM',
+    jobId: '', notes: '', urgency: 'MEDIUM',
     items: [{ partId: '', quantity: 1, notes: '' }],
   });
 
-  // Stats
-  const [stats, setStats] = useState({
-    total: 0,
-    pending: 0,
-    approved: 0,
-    rejected: 0,
-  });
+  const [stats, setStats] = useState({ total: 0, pending: 0, approved: 0, rejected: 0 });
 
+  // ─── init ───
   useEffect(() => {
-    const checkMobile = () => setIsMobile(window.innerWidth < 768);
-    checkMobile();
-    window.addEventListener('resize', checkMobile);
-    return () => window.removeEventListener('resize', checkMobile);
+    const check = () => setIsMobile(window.innerWidth < 768);
+    check(); window.addEventListener('resize', check);
+    return () => window.removeEventListener('resize', check);
   }, []);
 
   useEffect(() => {
-    const userData = localStorage.getItem('user');
-    if (userData) {
-      const user = JSON.parse(userData);
-      setCurrentUser(user);
-    }
-    fetchInitialData();
+    const u = localStorage.getItem('user');
+    if (u) setCurrentUser(JSON.parse(u));
+    fetchInitial();
   }, []);
 
-  useEffect(() => {
-    if (currentUser) {
-      fetchRequests();
-    }
-  }, [filters, currentUser]);
+  useEffect(() => { if (currentUser) fetchRequests(); }, [filters, currentUser]);
 
-  const fetchInitialData = async () => {
+  const fetchInitial = async () => {
     try {
-      const [jobsRes, partsRes] = await Promise.all([
-        fetch('/api/jobs'),
-        fetch('/api/inventory'),
-      ]);
-
-      const jobsData = await jobsRes.json();
-      const partsData = await partsRes.json();
-
-      if (jobsData.success) {
-        // Filter only assigned jobs for technicians
-        setJobs(jobsData.data || []);
-      }
-      if (partsData.success) {
-        setParts(partsData.data || []);
-      }
-    } catch (error) {
-      console.error('Error fetching initial data:', error);
-    }
+      const [jR, pR] = await Promise.all([fetch('/api/jobs'), fetch('/api/inventory')]);
+      const jD = await jR.json();
+      const pD = await pR.json();
+      if (jD.success) setJobs(jD.data || []);
+      if (pD.success) setParts(pD.data || []);
+    } catch {}
   };
 
   const fetchRequests = useCallback(async () => {
     try {
       setLoading(true);
-      const params = new URLSearchParams();
-      if (filters.status) params.append('status', filters.status);
-
-      const response = await fetch(`/api/inventory-requests?${params.toString()}`);
-      const data = await response.json();
-
-      if (data.success) {
-        setRequests(data.data || []);
-        calculateStats(data.data || []);
-      } else {
-        toast.error(data.message || 'Failed to load requests');
+      const p = new URLSearchParams();
+      if (filters.status) p.append('status', filters.status);
+      const r = await fetch(`/api/inventory-requests?${p}`);
+      const d = await r.json();
+      if (d.success) {
+        setRequests(d.data || []);
+        const data = d.data || [];
+        setStats({
+          total: data.length,
+          pending: data.filter(r => r.status === 'PENDING').length,
+          approved: data.filter(r => ['APPROVED', 'PARTIALLY_APPROVED'].includes(r.status)).length,
+          rejected: data.filter(r => r.status === 'REJECTED').length,
+        });
       }
-    } catch (error) {
-      console.error('Error fetching requests:', error);
-      toast.error('Failed to load requests');
-    } finally {
-      setLoading(false);
-    }
+    } catch { toast.error('Failed to load'); }
+    finally { setLoading(false); }
   }, [filters]);
 
-  const calculateStats = (requestsData) => {
-    setStats({
-      total: requestsData.length,
-      pending: requestsData.filter(r => r.status === 'PENDING').length,
-      approved: requestsData.filter(r => ['APPROVED', 'PARTIALLY_APPROVED'].includes(r.status)).length,
-      rejected: requestsData.filter(r => r.status === 'REJECTED').length,
-    });
-  };
+  // ─── form handlers ───
+  const resetForm = () => setFormData({
+    jobId: '', notes: '', urgency: 'MEDIUM',
+    items: [{ partId: '', quantity: 1, notes: '' }],
+  });
 
-  const handleFilterChange = (e) => {
-    const { name, value } = e.target;
-    setFilters(prev => ({ ...prev, [name]: value }));
-  };
+  const addItem = () => setFormData(p => ({
+    ...p, items: [...p.items, { partId: '', quantity: 1, notes: '' }],
+  }));
 
-  const resetForm = () => {
-    setFormData({
-      jobId: '',
-      notes: '',
-      urgency: 'MEDIUM',
-      items: [{ partId: '', quantity: 1, notes: '' }],
-    });
-  };
-
-  const addItem = () => {
-    setFormData(prev => ({
-      ...prev,
-      items: [...prev.items, { partId: '', quantity: 1, notes: '' }],
-    }));
-  };
-
-  const removeItem = (index) => {
+  const removeItem = (i) => {
     if (formData.items.length === 1) return;
-    setFormData(prev => ({
-      ...prev,
-      items: prev.items.filter((_, i) => i !== index),
+    setFormData(p => ({ ...p, items: p.items.filter((_, idx) => idx !== i) }));
+  };
+
+  const updateItem = (i, field, value) => {
+    setFormData(p => ({
+      ...p, items: p.items.map((item, idx) => idx === i ? { ...item, [field]: value } : item),
     }));
   };
 
-  const updateItem = (index, field, value) => {
-    setFormData(prev => ({
-      ...prev,
-      items: prev.items.map((item, i) => 
-        i === index ? { ...item, [field]: value } : item
-      ),
-    }));
-  };
-
-  const handleCreateRequest = async (e) => {
+  const handleCreate = async (e) => {
     e.preventDefault();
-    
-    // Validation
-    if (!formData.jobId) {
-      toast.error('Please select a job');
-      return;
-    }
-
-    const validItems = formData.items.filter(item => item.partId && item.quantity > 0);
-    if (validItems.length === 0) {
-      toast.error('Please add at least one item');
-      return;
-    }
-
+    if (!formData.jobId) { toast.error('Select a job'); return; }
+    const valid = formData.items.filter(i => i.partId && i.quantity > 0);
+    if (!valid.length) { toast.error('Add at least one item'); return; }
     setSubmitting(true);
-
     try {
-      const response = await fetch('/api/inventory-requests', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          jobId: formData.jobId,
-          notes: formData.notes,
-          urgency: formData.urgency,
-          items: validItems,
-        }),
+      const r = await fetch('/api/inventory-requests', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ jobId: formData.jobId, notes: formData.notes, urgency: formData.urgency, items: valid }),
       });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        toast.error(data.message || 'Failed to create request');
-        return;
-      }
-
-      toast.success('Request created successfully');
-      setShowCreateModal(false);
-      resetForm();
-      fetchRequests();
-    } catch (error) {
-      console.error('Error creating request:', error);
-      toast.error('An error occurred');
-    } finally {
-      setSubmitting(false);
-    }
+      const d = await r.json();
+      if (!r.ok) { toast.error(d.message || 'Failed'); return; }
+      toast.success('Request created!');
+      setShowCreateModal(false); resetForm(); fetchRequests();
+    } catch { toast.error('Error'); }
+    finally { setSubmitting(false); }
   };
 
-  const handleCancelRequest = async (requestId) => {
-    if (!confirm('Are you sure you want to cancel this request?')) return;
-
+  const handleCancel = async (id) => {
     try {
-      const response = await fetch(`/api/inventory-requests/${requestId}`, {
-        method: 'DELETE',
-      });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        toast.error(data.message || 'Failed to cancel request');
-        return;
-      }
-
+      const r = await fetch(`/api/inventory-requests/${id}`, { method: 'DELETE' });
+      const d = await r.json();
+      if (!r.ok) { toast.error(d.message || 'Failed'); return; }
       toast.success('Request cancelled');
-      fetchRequests();
-    } catch (error) {
-      console.error('Error cancelling request:', error);
-      toast.error('An error occurred');
-    }
+      setShowCancelConfirm(null); fetchRequests();
+    } catch { toast.error('Error'); }
   };
 
   const handleApproveReject = async (action, approvalData) => {
     if (!selectedRequest) return;
     setSubmitting(true);
-
     try {
-      const response = await fetch(`/api/inventory-requests/${selectedRequest.id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+      const r = await fetch(`/api/inventory-requests/${selectedRequest.id}`, {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          action,
-          items: approvalData?.items,
+          action, items: approvalData?.items,
           rejectionReason: approvalData?.rejectionReason,
         }),
       });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        toast.error(data.message || `Failed to ${action} request`);
-        return;
-      }
-
-      toast.success(data.message);
-      setShowApproveModal(false);
-      setShowDetailModal(false);
-      fetchRequests();
-    } catch (error) {
-      console.error('Error processing request:', error);
-      toast.error('An error occurred');
-    } finally {
-      setSubmitting(false);
-    }
+      const d = await r.json();
+      if (!r.ok) { toast.error(d.message || 'Failed'); return; }
+      toast.success(d.message);
+      setShowApproveModal(false); setShowDetailModal(false); fetchRequests();
+    } catch { toast.error('Error'); }
+    finally { setSubmitting(false); }
   };
 
-  const getStatusConfig = (status) => {
-    const configs = {
-      PENDING: { label: 'Pending', color: '#f59e0b', bg: '#fef3c7', icon: '⏳' },
-      APPROVED: { label: 'Approved', color: '#10b981', bg: '#d1fae5', icon: '✅' },
-      PARTIALLY_APPROVED: { label: 'Partial', color: '#3b82f6', bg: '#dbeafe', icon: '⚡' },
-      REJECTED: { label: 'Rejected', color: '#ef4444', bg: '#fee2e2', icon: '❌' },
-      CANCELLED: { label: 'Cancelled', color: '#6b7280', bg: '#f3f4f6', icon: '🚫' },
-    };
-    return configs[status] || configs.PENDING;
-  };
+  const isTech = currentUser?.role === 'EMPLOYEE';
+  const isMgr = ['SUPER_ADMIN', 'MANAGER'].includes(currentUser?.role);
 
-  const getUrgencyConfig = (urgency) => {
-    const configs = {
-      LOW: { label: 'Low', color: '#6b7280', icon: '🔵' },
-      MEDIUM: { label: 'Medium', color: '#3b82f6', icon: '🟡' },
-      HIGH: { label: 'High', color: '#f97316', icon: '🟠' },
-      URGENT: { label: 'Urgent', color: '#ef4444', icon: '🔴' },
-    };
-    return configs[urgency] || configs.MEDIUM;
-  };
-
-  const isTechnician = currentUser?.role === 'EMPLOYEE';
-  const isManager = ['SUPER_ADMIN', 'MANAGER'].includes(currentUser?.role);
+  const STAT_CARDS = [
+    { label: 'Total Requests', v: stats.total, icon: '📋', grad: 'linear-gradient(135deg,#3b82f6,#1d4ed8)' },
+    { label: 'Pending', v: stats.pending, icon: '⏳', grad: 'linear-gradient(135deg,#f59e0b,#d97706)' },
+    { label: 'Approved', v: stats.approved, icon: '✅', grad: 'linear-gradient(135deg,#10b981,#059669)' },
+    { label: 'Rejected', v: stats.rejected, icon: '❌', grad: 'linear-gradient(135deg,#ef4444,#dc2626)' },
+  ];
 
   return (
-    <div style={{ minHeight: '100vh', background: '#f9fafb' }}>
-      {/* Header */}
-      <div style={{
-        background: 'white',
-        borderBottom: '1px solid rgba(0,0,0,0.08)',
-        position: 'sticky',
-        top: 0,
-        zIndex: 10,
-        boxShadow: '0 1px 3px rgba(0,0,0,0.05)'
-      }}>
-        <div style={{
-          padding: isMobile ? '16px' : '16px 24px',
-          maxWidth: '1600px',
-          margin: '0 auto'
-        }}>
-          <div style={{
-            display: 'flex',
-            flexDirection: isMobile ? 'column' : 'row',
-            alignItems: isMobile ? 'flex-start' : 'center',
-            justifyContent: 'space-between',
-            gap: '16px'
-          }}>
+    <>
+      <style dangerouslySetInnerHTML={{ __html: CSS }} />
+
+      <div style={{ minHeight: '100vh' }}>
+        {/* ═══ HEADER ═══ */}
+        <div style={{ marginBottom: 24, animation: 'irSlideUp .5s ease' }}>
+          <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', flexWrap: 'wrap', gap: 14 }}>
             <div>
-              <h1 style={{
-                fontSize: isMobile ? '24px' : '32px',
-                fontWeight: '800',
-                color: '#1a202c',
-                margin: 0,
-                marginBottom: '4px'
-              }}>
-                📋 {isTechnician ? 'My Inventory Requests' : 'Inventory Requests'}
-              </h1>
-              <p style={{
-                color: '#6b7280',
-                fontSize: isMobile ? '14px' : '16px',
-                margin: 0
-              }}>
-                {isTechnician 
-                  ? 'Request parts and supplies for your assigned jobs'
-                  : 'Review and manage inventory requests from technicians'
-                }
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4 }}>
+                <span style={{ fontSize: 26 }}>📋</span>
+                <h1 style={{ margin: 0, fontSize: 'clamp(1.3rem,4vw,1.7rem)', fontWeight: 800, color: 'white', letterSpacing: '-.5px' }}>
+                  {isTech ? 'My Inventory Requests' : 'Inventory Requests'}
+                </h1>
+              </div>
+              <p style={{ margin: 0, fontSize: 13, color: 'rgba(255,255,255,.4)', fontWeight: 500 }}>
+                {isTech ? 'Request parts for your jobs' : 'Review and manage requests'}
               </p>
             </div>
 
-            {isTechnician && (
-              <button
-                onClick={() => setShowCreateModal(true)}
-                style={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: '8px',
-                  background: 'linear-gradient(135deg, #14b8a6 0%, #0891b2 100%)',
-                  border: 'none',
-                  color: 'white',
-                  padding: '12px 24px',
-                  borderRadius: '12px',
-                  fontWeight: '600',
-                  fontSize: '15px',
-                  cursor: 'pointer',
-                  boxShadow: '0 4px 12px rgba(20, 184, 166, 0.3)',
-                  width: isMobile ? '100%' : 'auto',
-                  justifyContent: 'center'
-                }}
-              >
-                <svg style={{ width: '20px', height: '20px' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
-                </svg>
-                New Request
-              </button>
+            {isTech && (
+              <Btn onClick={() => setShowCreateModal(true)}
+                label="New Request" icon="➕"
+                grad="linear-gradient(135deg,#14b8a6,#0891b2)"
+                glow="rgba(20,184,166,.35)" full={isMobile} />
             )}
           </div>
         </div>
-      </div>
 
-      <div style={{
-        padding: isMobile ? '16px' : '24px',
-        maxWidth: '1600px',
-        margin: '0 auto'
-      }}>
-        {/* Stats Cards */}
+        {/* ═══ STATS ═══ */}
         <div style={{
           display: 'grid',
-          gridTemplateColumns: isMobile ? 'repeat(2, 1fr)' : 'repeat(4, 1fr)',
-          gap: '16px',
-          marginBottom: '24px'
+          gridTemplateColumns: `repeat(auto-fit, minmax(min(100%, ${isMobile ? '140px' : '200px'}), 1fr))`,
+          gap: isMobile ? 10 : 14, marginBottom: 20,
         }}>
-          <StatCard title="Total Requests" value={stats.total} icon="📋" color="#3b82f6" isMobile={isMobile} />
-          <StatCard title="Pending" value={stats.pending} icon="⏳" color="#f59e0b" isMobile={isMobile} />
-          <StatCard title="Approved" value={stats.approved} icon="✅" color="#10b981" isMobile={isMobile} />
-          <StatCard title="Rejected" value={stats.rejected} icon="❌" color="#ef4444" isMobile={isMobile} />
+          {STAT_CARDS.map((s, i) => (
+            <div key={s.label} className="ir-glass ir-stat" style={{
+              padding: isMobile ? '14px' : 'clamp(14px,2vw,20px)',
+              animation: `irSlideUp .5s ease ${i * .08}s backwards`,
+              cursor: 'default',
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                <div style={{ minWidth: 0 }}>
+                  <p style={{ margin: 0, fontSize: 9.5, fontWeight: 700, color: 'rgba(255,255,255,.38)', textTransform: 'uppercase', letterSpacing: '.7px' }}>{s.label}</p>
+                  <p style={{ margin: '5px 0 0', fontSize: isMobile ? '1.2rem' : 'clamp(1.2rem,2.5vw,1.6rem)', fontWeight: 800, color: 'white' }}>{s.v}</p>
+                </div>
+                <div className="ir-stat-icon" style={{
+                  width: isMobile ? 42 : 48, height: isMobile ? 42 : 48, borderRadius: 13,
+                  background: s.grad,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  fontSize: isMobile ? 20 : 22, flexShrink: 0,
+                  boxShadow: '0 6px 18px rgba(0,0,0,.25)',
+                  transition: 'transform .3s ease',
+                }}>{s.icon}</div>
+              </div>
+            </div>
+          ))}
         </div>
 
-        {/* Filters */}
-        <div style={{
-          background: 'white',
-          borderRadius: '16px',
-          padding: '16px',
-          marginBottom: '24px',
-          boxShadow: '0 1px 3px rgba(0,0,0,0.05)'
+        {/* ═══ FILTERS ═══ */}
+        <div className="ir-glass" style={{
+          padding: isMobile ? 14 : 16, marginBottom: 20,
+          animation: 'irSlideUp .5s ease .2s backwards',
         }}>
-          <div style={{
-            display: 'flex',
-            flexDirection: isMobile ? 'column' : 'row',
-            gap: '12px'
-          }}>
-            <select
-              name="status"
-              value={filters.status}
-              onChange={handleFilterChange}
-              style={{
-                padding: '12px 16px',
-                border: '2px solid #e5e7eb',
-                borderRadius: '12px',
-                fontSize: '15px',
-                background: 'white',
-                minWidth: '180px',
-                cursor: 'pointer'
-              }}
-            >
+          <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: 10 }}>
+            <select className="ir-select" name="status" value={filters.status}
+              onChange={(e) => setFilters({ status: e.target.value })}
+              style={{ minWidth: isMobile ? '100%' : 180 }}>
               <option value="">All Status</option>
               <option value="PENDING">⏳ Pending</option>
               <option value="APPROVED">✅ Approved</option>
@@ -412,1020 +332,415 @@ export default function InventoryRequestsPage() {
             </select>
 
             {filters.status && (
-              <button
-                onClick={() => setFilters({ status: '' })}
-                style={{
-                  padding: '12px 16px',
-                  border: '2px solid #e5e7eb',
-                  borderRadius: '12px',
-                  background: 'white',
-                  color: '#6b7280',
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '8px'
-                }}
-              >
-                <svg style={{ width: '16px', height: '16px' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <button onClick={() => setFilters({ status: '' })} className="ir-btn" style={{
+                padding: '10px 14px', borderRadius: 12,
+                background: 'rgba(255,255,255,.04)',
+                border: '1px solid rgba(255,255,255,.08)',
+                color: 'rgba(255,255,255,.5)', fontSize: 13, fontWeight: 600,
+                display: 'flex', alignItems: 'center', gap: 6,
+              }}>
+                <svg style={{ width: 14, height: 14 }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                 </svg>
-                Clear Filter
+                Clear
               </button>
             )}
           </div>
         </div>
 
-        {/* Requests List */}
+        {/* ═══ CONTENT ═══ */}
         {loading ? (
-          <LoadingState isMobile={isMobile} />
+          <div style={{ display: 'flex', justifyContent: 'center', padding: '80px 20px' }}>
+            <div style={{ textAlign: 'center' }}>
+              <div style={{ width: 44, height: 44, margin: '0 auto 14px', border: '3px solid rgba(255,255,255,.1)', borderTopColor: '#14b8a6', borderRadius: '50%', animation: 'irSpin .8s linear infinite' }} />
+              <p style={{ color: 'rgba(255,255,255,.4)', fontSize: 14, fontWeight: 500 }}>Loading requests...</p>
+            </div>
+          </div>
         ) : requests.length === 0 ? (
-          <EmptyState 
-            isTechnician={isTechnician}
-            hasFilter={!!filters.status}
-            onCreateClick={() => setShowCreateModal(true)}
-            isMobile={isMobile}
-          />
+          <div className="ir-glass" style={{ padding: '60px 24px', textAlign: 'center', animation: 'irScaleIn .5s ease' }}>
+            <div style={{ width: 72, height: 72, borderRadius: 22, background: 'rgba(20,184,166,.12)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 20px', fontSize: 32, animation: 'irFloat 3s ease-in-out infinite' }}>📋</div>
+            <h3 style={{ margin: '0 0 8px', fontSize: 18, fontWeight: 700, color: 'white' }}>No requests found</h3>
+            <p style={{ margin: '0 0 24px', fontSize: 14, color: 'rgba(255,255,255,.4)' }}>
+              {filters.status ? 'Try different filters' : isTech ? 'Create your first request' : 'No pending requests'}
+            </p>
+            {isTech && !filters.status && (
+              <Btn onClick={() => setShowCreateModal(true)} label="Create First Request" icon="➕"
+                grad="linear-gradient(135deg,#14b8a6,#0891b2)" glow="rgba(20,184,166,.35)" />
+            )}
+          </div>
         ) : (
-          <div style={{
-            display: 'flex',
-            flexDirection: 'column',
-            gap: '16px'
-          }}>
-            {requests.map(request => (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            {requests.map((req, i) => (
               <RequestCard
-                key={request.id}
-                request={request}
-                getStatusConfig={getStatusConfig}
-                getUrgencyConfig={getUrgencyConfig}
-                isTechnician={isTechnician}
-                isManager={isManager}
-                onView={() => {
-                  setSelectedRequest(request);
-                  setShowDetailModal(true);
-                }}
-                onApprove={() => {
-                  setSelectedRequest(request);
-                  setShowApproveModal(true);
-                }}
-                onCancel={() => handleCancelRequest(request.id)}
+                key={req.id}
+                request={req}
+                index={i}
+                isTech={isTech}
+                isMgr={isMgr}
                 isMobile={isMobile}
+                onView={() => { setSelectedRequest(req); setShowDetailModal(true); }}
+                onApprove={() => { setSelectedRequest(req); setShowApproveModal(true); }}
+                onCancel={() => setShowCancelConfirm(req.id)}
               />
             ))}
           </div>
         )}
       </div>
 
-      {/* Create Request Modal */}
+      {/* ═══ CREATE MODAL ═══ */}
       {showCreateModal && (
-        <CreateRequestModal
-          isMobile={isMobile}
-          formData={formData}
-          setFormData={setFormData}
-          jobs={jobs.filter(j => j.assignedToId === currentUser?.id)}
-          parts={parts}
-          onSubmit={handleCreateRequest}
-          onClose={() => {
-            setShowCreateModal(false);
-            resetForm();
-          }}
-          addItem={addItem}
-          removeItem={removeItem}
-          updateItem={updateItem}
-          submitting={submitting}
-        />
+        <Overlay onClose={() => { setShowCreateModal(false); resetForm(); }}>
+          <div style={{ maxWidth: 620, width: '100%' }}>
+            <MHead grad="linear-gradient(135deg,#14b8a6,#0891b2)"
+              title="📦 New Inventory Request"
+              sub="Request parts for your job"
+              onClose={() => { setShowCreateModal(false); resetForm(); }} />
+
+            <form onSubmit={handleCreate} style={{
+              padding: isMobile ? 20 : 24,
+              background: 'rgba(15,23,42,.97)',
+              borderRadius: '0 0 20px 20px',
+              border: '1px solid rgba(255,255,255,.06)', borderTop: 'none',
+            }}>
+              <div style={{ maxHeight: 'calc(75vh - 200px)', overflowY: 'auto', paddingRight: 4 }}>
+                {/* Job */}
+                <div style={{ marginBottom: 18 }}>
+                  <label className="ir-label">Select Job <span style={{ color: '#14b8a6' }}>*</span></label>
+                  <select className="ir-select" value={formData.jobId}
+                    onChange={(e) => setFormData(p => ({ ...p, jobId: e.target.value }))} required>
+                    <option value="">Choose a job...</option>
+                    {jobs.filter(j => j.assignedToId === currentUser?.id).map(j => (
+                      <option key={j.id} value={j.id}>
+                        {j.jobNumber} - {j.vehicle?.licensePlate} ({j.vehicle?.make} {j.vehicle?.model})
+                      </option>
+                    ))}
+                  </select>
+                  {jobs.filter(j => j.assignedToId === currentUser?.id).length === 0 && (
+                    <p style={{ fontSize: 11, color: '#fca5a5', marginTop: 6 }}>No jobs assigned to you.</p>
+                  )}
+                </div>
+
+                {/* Urgency */}
+                <div style={{ marginBottom: 18 }}>
+                  <label className="ir-label">Urgency</label>
+                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                    {[
+                      { v: 'LOW', l: '🔵 Low', c: '#3b82f6' },
+                      { v: 'MEDIUM', l: '🟡 Medium', c: '#f59e0b' },
+                      { v: 'HIGH', l: '🟠 High', c: '#f97316' },
+                      { v: 'URGENT', l: '🔴 Urgent', c: '#ef4444' },
+                    ].map(o => (
+                      <label key={o.v} style={{
+                        display: 'flex', alignItems: 'center', padding: '9px 14px',
+                        borderRadius: 10, cursor: 'pointer',
+                        background: formData.urgency === o.v ? `${o.c}15` : 'rgba(255,255,255,.03)',
+                        border: `1.5px solid ${formData.urgency === o.v ? `${o.c}40` : 'rgba(255,255,255,.07)'}`,
+                        transition: 'all .2s',
+                      }}>
+                        <input type="radio" name="urgency" value={o.v}
+                          checked={formData.urgency === o.v}
+                          onChange={(e) => setFormData(p => ({ ...p, urgency: e.target.value }))}
+                          style={{ display: 'none' }} />
+                        <span style={{ fontWeight: 700, fontSize: 13, color: formData.urgency === o.v ? o.c : 'rgba(255,255,255,.45)' }}>{o.l}</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Items */}
+                <div style={{ marginBottom: 18 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+                    <label className="ir-label" style={{ margin: 0 }}>Request Items <span style={{ color: '#14b8a6' }}>*</span></label>
+                    <button type="button" onClick={addItem} className="ir-btn" style={{
+                      padding: '6px 12px', borderRadius: 8,
+                      background: 'rgba(16,185,129,.12)', border: '1px solid rgba(16,185,129,.2)',
+                      color: '#6ee7b7', fontSize: 12, fontWeight: 700,
+                      display: 'flex', alignItems: 'center', gap: 4,
+                    }}>
+                      <svg style={{ width: 14, height: 14 }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 6v12m6-6H6" />
+                      </svg>
+                      Add Item
+                    </button>
+                  </div>
+
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                    {formData.items.map((item, idx) => (
+                      <div key={idx} style={{
+                        padding: 14, borderRadius: 14,
+                        background: 'rgba(255,255,255,.025)',
+                        border: '1px solid rgba(255,255,255,.06)',
+                      }}>
+                        <div style={{
+                          display: 'grid',
+                          gridTemplateColumns: isMobile ? '1fr' : '2fr 1fr auto',
+                          gap: 10, alignItems: 'end',
+                        }}>
+                          <div>
+                            <label style={{ fontSize: 10, color: 'rgba(255,255,255,.35)', fontWeight: 600, display: 'block', marginBottom: 4 }}>Part</label>
+                            <select className="ir-select" value={item.partId}
+                              onChange={(e) => updateItem(idx, 'partId', e.target.value)} required>
+                              <option value="">Select part...</option>
+                              {parts.map(p => (
+                                <option key={p.id} value={p.id}>
+                                  {p.name} ({p.partNumber}) - Stock: {p.quantity}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                          <div>
+                            <label style={{ fontSize: 10, color: 'rgba(255,255,255,.35)', fontWeight: 600, display: 'block', marginBottom: 4 }}>Qty</label>
+                            <input className="ir-input" type="number" value={item.quantity}
+                              onChange={(e) => updateItem(idx, 'quantity', parseInt(e.target.value) || 1)}
+                              min="1" required />
+                          </div>
+                          {formData.items.length > 1 && (
+                            <button type="button" onClick={() => removeItem(idx)} className="ir-btn" style={{
+                              width: 38, height: 38, borderRadius: 10,
+                              background: 'rgba(239,68,68,.1)', border: '1px solid rgba(239,68,68,.2)',
+                              color: '#fca5a5',
+                              display: 'flex', alignItems: 'center', justifyContent: 'center',
+                            }}>
+                              <svg style={{ width: 16, height: 16 }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                                  d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                              </svg>
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Notes */}
+                <div>
+                  <label className="ir-label">Additional Notes</label>
+                  <textarea className="ir-input" value={formData.notes}
+                    onChange={(e) => setFormData(p => ({ ...p, notes: e.target.value }))}
+                    rows={3} placeholder="Special instructions..."
+                    style={{ resize: 'none' }} />
+                </div>
+              </div>
+
+              <MFoot onCancel={() => { setShowCreateModal(false); resetForm(); }}
+                submitting={submitting} label="Submit Request"
+                grad="linear-gradient(135deg,#14b8a6,#0891b2)"
+                glow="rgba(20,184,166,.3)"
+                disabled={jobs.filter(j => j.assignedToId === currentUser?.id).length === 0} />
+            </form>
+          </div>
+        </Overlay>
       )}
 
-      {/* Detail Modal */}
+      {/* ═══ DETAIL MODAL ═══ */}
       {showDetailModal && selectedRequest && (
         <DetailModal
-          isMobile={isMobile}
           request={selectedRequest}
-          getStatusConfig={getStatusConfig}
-          getUrgencyConfig={getUrgencyConfig}
-          isManager={isManager}
-          onClose={() => {
-            setShowDetailModal(false);
-            setSelectedRequest(null);
-          }}
-          onApprove={() => {
-            setShowDetailModal(false);
-            setShowApproveModal(true);
-          }}
+          isMobile={isMobile}
+          isMgr={isMgr}
+          onClose={() => { setShowDetailModal(false); setSelectedRequest(null); }}
+          onApprove={() => { setShowDetailModal(false); setShowApproveModal(true); }}
           onReject={(reason) => handleApproveReject('reject', { rejectionReason: reason })}
           submitting={submitting}
         />
       )}
 
-      {/* Approve Modal */}
+      {/* ═══ APPROVE MODAL ═══ */}
       {showApproveModal && selectedRequest && (
         <ApproveModal
-          isMobile={isMobile}
           request={selectedRequest}
-          onClose={() => {
-            setShowApproveModal(false);
-            setSelectedRequest(null);
-          }}
+          isMobile={isMobile}
+          onClose={() => { setShowApproveModal(false); setSelectedRequest(null); }}
           onApprove={(items) => handleApproveReject('approve', { items })}
           submitting={submitting}
         />
       )}
 
-      <style jsx global>{`
-        @keyframes spin {
-          from { transform: rotate(0deg); }
-          to { transform: rotate(360deg); }
-        }
-        @keyframes slideUp {
-          from { opacity: 0; transform: translateY(20px); }
-          to { opacity: 1; transform: translateY(0); }
-        }
-      `}</style>
-    </div>
-  );
-}
-
-// Helper Components
-
-function StatCard({ title, value, icon, color, isMobile }) {
-  return (
-    <div style={{
-      background: 'white',
-      borderRadius: '16px',
-      padding: isMobile ? '16px' : '20px',
-      boxShadow: '0 1px 3px rgba(0,0,0,0.05)',
-      border: '1px solid rgba(0,0,0,0.05)'
-    }}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-        <div>
-          <p style={{ fontSize: '12px', color: '#6b7280', fontWeight: '600', margin: 0, marginBottom: '4px', textTransform: 'uppercase' }}>
-            {title}
-          </p>
-          <p style={{ fontSize: isMobile ? '24px' : '28px', fontWeight: '800', color: '#1a202c', margin: 0 }}>
-            {value}
-          </p>
-        </div>
-        <div style={{
-          width: isMobile ? '44px' : '52px',
-          height: isMobile ? '44px' : '52px',
-          background: `${color}15`,
-          borderRadius: '14px',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          fontSize: isMobile ? '22px' : '26px'
-        }}>
-          {icon}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function LoadingState({ isMobile }) {
-  return (
-    <div style={{
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-      padding: '80px 20px',
-      background: 'white',
-      borderRadius: '20px'
-    }}>
-      <div style={{ textAlign: 'center' }}>
-        <div style={{
-          width: '56px',
-          height: '56px',
-          border: '4px solid #e5e7eb',
-          borderTopColor: '#14b8a6',
-          borderRadius: '50%',
-          animation: 'spin 1s linear infinite',
-          margin: '0 auto 16px'
-        }} />
-        <p style={{ color: '#6b7280', fontSize: '16px', fontWeight: '500', margin: 0 }}>
-          Loading requests...
-        </p>
-      </div>
-    </div>
-  );
-}
-
-function EmptyState({ isTechnician, hasFilter, onCreateClick, isMobile }) {
-  return (
-    <div style={{
-      background: 'white',
-      borderRadius: '20px',
-      padding: isMobile ? '40px 20px' : '60px 40px',
-      textAlign: 'center',
-      boxShadow: '0 1px 3px rgba(0,0,0,0.05)'
-    }}>
-      <div style={{
-        width: '80px',
-        height: '80px',
-        background: '#f3f4f6',
-        borderRadius: '20px',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        margin: '0 auto 24px',
-        fontSize: '40px'
-      }}>
-        📋
-      </div>
-      <h3 style={{ fontSize: '20px', fontWeight: '700', color: '#1a202c', margin: 0, marginBottom: '8px' }}>
-        No requests found
-      </h3>
-      <p style={{ fontSize: '16px', color: '#6b7280', margin: 0, marginBottom: '24px' }}>
-        {hasFilter 
-          ? 'Try adjusting your filters to see requests.'
-          : isTechnician 
-            ? 'Create your first inventory request for a job.'
-            : 'No pending requests from technicians.'
-        }
-      </p>
-      {isTechnician && !hasFilter && (
-        <button
-          onClick={onCreateClick}
-          style={{
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: '8px',
-            background: 'linear-gradient(135deg, #14b8a6 0%, #0891b2 100%)',
-            color: 'white',
-            padding: '14px 28px',
-            borderRadius: '12px',
-            border: 'none',
-            fontWeight: '600',
-            fontSize: '16px',
-            cursor: 'pointer'
-          }}
-        >
-          <svg style={{ width: '20px', height: '20px' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
-          </svg>
-          Create First Request
-        </button>
+      {/* ═══ CANCEL CONFIRM ═══ */}
+      {showCancelConfirm && (
+        <Overlay onClose={() => setShowCancelConfirm(null)}>
+          <div style={{
+            maxWidth: 380, width: '100%',
+            background: 'rgba(15,23,42,.97)', borderRadius: 20,
+            border: '1px solid rgba(255,255,255,.06)',
+            padding: 28, textAlign: 'center',
+          }}>
+            <div style={{ width: 56, height: 56, borderRadius: '50%', background: 'rgba(239,68,68,.12)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px', fontSize: 26 }}>🚫</div>
+            <h3 style={{ margin: '0 0 6px', fontSize: 17, fontWeight: 800, color: 'white' }}>Cancel Request?</h3>
+            <p style={{ margin: '0 0 20px', fontSize: 13, color: 'rgba(255,255,255,.45)' }}>This action cannot be undone.</p>
+            <div style={{ display: 'flex', gap: 10 }}>
+              <Btn onClick={() => setShowCancelConfirm(null)} label="Keep" outline color="rgba(255,255,255,.4)" style={{ flex: 1 }} />
+              <button onClick={() => handleCancel(showCancelConfirm)} className="ir-btn" style={{
+                flex: 1, padding: '10px 0', borderRadius: 12,
+                background: 'linear-gradient(135deg,#ef4444,#dc2626)',
+                border: 'none', color: 'white', fontSize: 13, fontWeight: 700,
+              }}>Cancel Request</button>
+            </div>
+          </div>
+        </Overlay>
       )}
-    </div>
+    </>
   );
 }
 
-function RequestCard({ 
-  request, 
-  getStatusConfig, 
-  getUrgencyConfig, 
-  isTechnician, 
-  isManager, 
-  onView, 
-  onApprove, 
-  onCancel,
-  isMobile 
-}) {
-  const statusConfig = getStatusConfig(request.status);
-  const urgencyConfig = getUrgencyConfig(request.urgency);
+// ══════════════════════════════════════════════
+// REQUEST CARD
+// ══════════════════════════════════════════════
+function RequestCard({ request, index, isTech, isMgr, isMobile, onView, onApprove, onCancel }) {
+  const sc = getSC(request.status);
+  const uc = getUC(request.urgency);
   const itemCount = request.items?.length || 0;
-  const totalQty = request.items?.reduce((sum, item) => sum + item.quantityRequested, 0) || 0;
+  const totalQty = request.items?.reduce((s, i) => s + i.quantityRequested, 0) || 0;
 
   return (
-    <div 
-      style={{
-        background: 'white',
-        borderRadius: '16px',
-        boxShadow: '0 1px 3px rgba(0,0,0,0.05)',
-        border: '1px solid rgba(0,0,0,0.05)',
-        overflow: 'hidden',
-        transition: 'all 0.2s',
-        cursor: 'pointer'
-      }}
-      onClick={onView}
-      onMouseEnter={(e) => {
-        e.currentTarget.style.transform = 'translateY(-2px)';
-        e.currentTarget.style.boxShadow = '0 8px 24px rgba(0,0,0,0.1)';
-      }}
-      onMouseLeave={(e) => {
-        e.currentTarget.style.transform = 'translateY(0)';
-        e.currentTarget.style.boxShadow = '0 1px 3px rgba(0,0,0,0.05)';
-      }}
-    >
-      <div style={{ padding: '20px' }}>
-        <div style={{
-          display: 'flex',
-          flexDirection: isMobile ? 'column' : 'row',
-          justifyContent: 'space-between',
-          gap: '16px'
-        }}>
-          {/* Left Section */}
-          <div style={{ flex: 1 }}>
-            <div style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '12px',
-              flexWrap: 'wrap',
-              marginBottom: '12px'
-            }}>
-              <span style={{
-                fontFamily: 'monospace',
-                fontWeight: '700',
-                fontSize: '16px',
-                color: '#1a202c'
-              }}>
-                {request.requestNumber}
-              </span>
-              <span style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: '4px',
-                padding: '4px 10px',
-                borderRadius: '20px',
-                fontSize: '12px',
-                fontWeight: '600',
-                background: statusConfig.bg,
-                color: statusConfig.color
-              }}>
-                {statusConfig.icon} {statusConfig.label}
-              </span>
-              <span style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: '4px',
-                padding: '4px 10px',
-                borderRadius: '20px',
-                fontSize: '12px',
-                fontWeight: '600',
-                background: '#f3f4f6',
-                color: urgencyConfig.color
-              }}>
-                {urgencyConfig.icon} {urgencyConfig.label}
-              </span>
-            </div>
-
-            <div style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '8px',
-              marginBottom: '8px'
-            }}>
-              <span style={{ fontSize: '14px', color: '#6b7280' }}>Job:</span>
-              <span style={{ fontWeight: '600', color: '#1a202c' }}>
-                {request.job?.jobNumber}
-              </span>
-              <span style={{ color: '#9ca3af' }}>•</span>
-              <span style={{ fontSize: '14px', color: '#6b7280' }}>
-                {request.job?.vehicle?.licensePlate}
-              </span>
-            </div>
-
-            <div style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '16px',
-              fontSize: '14px'
-            }}>
-              <span style={{ color: '#6b7280' }}>
-                <strong style={{ color: '#1a202c' }}>{itemCount}</strong> item(s)
-              </span>
-              <span style={{ color: '#6b7280' }}>
-                <strong style={{ color: '#1a202c' }}>{totalQty}</strong> total qty
-              </span>
-              {!isTechnician && (
-                <>
-                  <span style={{ color: '#9ca3af' }}>•</span>
-                  <span style={{ color: '#6b7280' }}>
-                    By: <strong style={{ color: '#1a202c' }}>{request.requestedBy?.name}</strong>
-                  </span>
-                </>
-              )}
-            </div>
-          </div>
-
-          {/* Right Section - Actions */}
-          <div style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: '8px',
-            flexShrink: 0
-          }}>
-            {isManager && request.status === 'PENDING' && (
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onApprove();
-                }}
-                style={{
-                  padding: '10px 20px',
-                  background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
-                  border: 'none',
-                  borderRadius: '10px',
-                  color: 'white',
-                  fontWeight: '600',
-                  fontSize: '14px',
-                  cursor: 'pointer'
-                }}
-              >
-                Review
-              </button>
-            )}
-
-            {isTechnician && request.status === 'PENDING' && (
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onCancel();
-                }}
-                style={{
-                  padding: '10px 20px',
-                  background: '#fee2e2',
-                  border: 'none',
-                  borderRadius: '10px',
-                  color: '#ef4444',
-                  fontWeight: '600',
-                  fontSize: '14px',
-                  cursor: 'pointer'
-                }}
-              >
-                Cancel
-              </button>
-            )}
-
-            <span style={{ color: '#6b7280', fontSize: '13px' }}>
-              {new Date(request.createdAt).toLocaleDateString('en-IN', {
-                day: 'numeric',
-                month: 'short',
-                hour: '2-digit',
-                minute: '2-digit'
-              })}
+    <div className="ir-glass ir-card-hover" onClick={onView} style={{
+      padding: isMobile ? 16 : 20, cursor: 'pointer',
+      animation: `irSlideUp .4s ease ${index * .04}s backwards`,
+    }}>
+      <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', justifyContent: 'space-between', gap: 14 }}>
+        {/* left */}
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 10 }}>
+            <span style={{ fontFamily: 'monospace', fontWeight: 800, fontSize: 15, color: 'white' }}>
+              {request.requestNumber}
             </span>
+            <Badge text={`${sc.icon} ${sc.label}`} bg={sc.bg} border={sc.border} color={sc.c} />
+            <Badge text={`${uc.icon} ${uc.label}`} bg="rgba(255,255,255,.05)" border="rgba(255,255,255,.08)" color={uc.c} />
           </div>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6, flexWrap: 'wrap' }}>
+            <span style={{ fontSize: 13, color: 'rgba(255,255,255,.4)' }}>Job:</span>
+            <span style={{ fontWeight: 700, color: 'white', fontSize: 13 }}>{request.job?.jobNumber}</span>
+            <span style={{ color: 'rgba(255,255,255,.2)' }}>•</span>
+            <span style={{ fontSize: 13, color: 'rgba(255,255,255,.4)' }}>{request.job?.vehicle?.licensePlate}</span>
+          </div>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: 14, fontSize: 13, flexWrap: 'wrap' }}>
+            <span style={{ color: 'rgba(255,255,255,.4)' }}>
+              <strong style={{ color: 'white' }}>{itemCount}</strong> item(s)
+            </span>
+            <span style={{ color: 'rgba(255,255,255,.4)' }}>
+              <strong style={{ color: 'white' }}>{totalQty}</strong> total qty
+            </span>
+            {!isTech && (
+              <>
+                <span style={{ color: 'rgba(255,255,255,.15)' }}>•</span>
+                <span style={{ color: 'rgba(255,255,255,.4)' }}>
+                  By: <strong style={{ color: 'white' }}>{request.requestedBy?.name}</strong>
+                </span>
+              </>
+            )}
+          </div>
+        </div>
+
+        {/* right */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0, flexWrap: 'wrap' }}>
+          {isMgr && request.status === 'PENDING' && (
+            <button onClick={(e) => { e.stopPropagation(); onApprove(); }} className="ir-btn" style={{
+              padding: '8px 16px', borderRadius: 10,
+              background: 'linear-gradient(135deg,#10b981,#059669)',
+              border: 'none', color: 'white', fontWeight: 700, fontSize: 13,
+              boxShadow: '0 4px 12px rgba(16,185,129,.3)',
+            }}>Review</button>
+          )}
+          {isTech && request.status === 'PENDING' && (
+            <button onClick={(e) => { e.stopPropagation(); onCancel(); }} className="ir-btn" style={{
+              padding: '8px 16px', borderRadius: 10,
+              background: 'rgba(239,68,68,.1)', border: '1px solid rgba(239,68,68,.2)',
+              color: '#fca5a5', fontWeight: 700, fontSize: 13,
+            }}>Cancel</button>
+          )}
+          <span style={{ color: 'rgba(255,255,255,.3)', fontSize: 11, fontWeight: 500 }}>
+            {new Date(request.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
+          </span>
         </div>
       </div>
     </div>
   );
 }
 
-function CreateRequestModal({
-  isMobile,
-  formData,
-  setFormData,
-  jobs,
-  parts,
-  onSubmit,
-  onClose,
-  addItem,
-  removeItem,
-  updateItem,
-  submitting
-}) {
-  return (
-    <div
-      style={{
-        position: 'fixed',
-        top: 0,
-        left: 0,
-        right: 0,
-        bottom: 0,
-        background: 'rgba(0,0,0,0.5)',
-        backdropFilter: 'blur(4px)',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        zIndex: 50,
-        padding: '16px'
-      }}
-      onClick={onClose}
-    >
-      <div
-        style={{
-          background: 'white',
-          borderRadius: '24px',
-          boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)',
-          width: '100%',
-          maxWidth: '700px',
-          maxHeight: '90vh',
-          overflow: 'hidden',
-          animation: 'slideUp 0.3s ease-out'
-        }}
-        onClick={(e) => e.stopPropagation()}
-      >
-        {/* Header */}
-        <div style={{
-          background: 'linear-gradient(135deg, #14b8a6 0%, #0891b2 100%)',
-          padding: '24px',
-          color: 'white'
-        }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <div>
-              <h2 style={{ fontSize: '24px', fontWeight: '700', margin: 0, marginBottom: '4px' }}>
-                📦 New Inventory Request
-              </h2>
-              <p style={{ fontSize: '14px', opacity: 0.9, margin: 0 }}>
-                Request parts and supplies for your job
-              </p>
-            </div>
-            <button
-              onClick={onClose}
-              style={{
-                padding: '8px',
-                background: 'rgba(255,255,255,0.15)',
-                border: 'none',
-                borderRadius: '10px',
-                color: 'white',
-                cursor: 'pointer'
-              }}
-            >
-              <svg style={{ width: '20px', height: '20px' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-              </svg>
-            </button>
-          </div>
-        </div>
-
-        {/* Content */}
-        <form onSubmit={onSubmit}>
-          <div style={{ padding: '24px', maxHeight: 'calc(90vh - 200px)', overflowY: 'auto' }}>
-            {/* Job Selection */}
-            <div style={{ marginBottom: '20px' }}>
-              <label style={{
-                display: 'block',
-                fontSize: '14px',
-                fontWeight: '600',
-                color: '#374151',
-                marginBottom: '8px'
-              }}>
-                Select Job <span style={{ color: '#ef4444' }}>*</span>
-              </label>
-              <select
-                value={formData.jobId}
-                onChange={(e) => setFormData(prev => ({ ...prev, jobId: e.target.value }))}
-                required
-                style={{
-                  width: '100%',
-                  padding: '12px 16px',
-                  border: '2px solid #e5e7eb',
-                  borderRadius: '12px',
-                  fontSize: '15px',
-                  background: 'white'
-                }}
-              >
-                <option value="">Choose a job...</option>
-                {jobs.map(job => (
-                  <option key={job.id} value={job.id}>
-                    {job.jobNumber} - {job.vehicle?.licensePlate} ({job.vehicle?.make} {job.vehicle?.model})
-                  </option>
-                ))}
-              </select>
-              {jobs.length === 0 && (
-                <p style={{ fontSize: '13px', color: '#ef4444', marginTop: '8px' }}>
-                  No jobs assigned to you. Contact your manager.
-                </p>
-              )}
-            </div>
-
-            {/* Urgency */}
-            <div style={{ marginBottom: '20px' }}>
-              <label style={{
-                display: 'block',
-                fontSize: '14px',
-                fontWeight: '600',
-                color: '#374151',
-                marginBottom: '8px'
-              }}>
-                Urgency
-              </label>
-              <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
-                {[
-                  { value: 'LOW', label: '🔵 Low', color: '#3b82f6' },
-                  { value: 'MEDIUM', label: '🟡 Medium', color: '#f59e0b' },
-                  { value: 'HIGH', label: '🟠 High', color: '#f97316' },
-                  { value: 'URGENT', label: '🔴 Urgent', color: '#ef4444' }
-                ].map(option => (
-                  <label
-                    key={option.value}
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      padding: '10px 16px',
-                      border: `2px solid ${formData.urgency === option.value ? option.color : '#e5e7eb'}`,
-                      borderRadius: '10px',
-                      cursor: 'pointer',
-                      background: formData.urgency === option.value ? `${option.color}15` : 'white'
-                    }}
-                  >
-                    <input
-                      type="radio"
-                      name="urgency"
-                      value={option.value}
-                      checked={formData.urgency === option.value}
-                      onChange={(e) => setFormData(prev => ({ ...prev, urgency: e.target.value }))}
-                      style={{ display: 'none' }}
-                    />
-                    <span style={{
-                      fontWeight: '600',
-                      fontSize: '14px',
-                      color: formData.urgency === option.value ? option.color : '#6b7280'
-                    }}>
-                      {option.label}
-                    </span>
-                  </label>
-                ))}
-              </div>
-            </div>
-
-            {/* Items */}
-            <div style={{ marginBottom: '20px' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-                <label style={{
-                  fontSize: '14px',
-                  fontWeight: '600',
-                  color: '#374151'
-                }}>
-                  Request Items <span style={{ color: '#ef4444' }}>*</span>
-                </label>
-                <button
-                  type="button"
-                  onClick={addItem}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '4px',
-                    padding: '8px 16px',
-                    background: '#f0fdf4',
-                    border: 'none',
-                    borderRadius: '8px',
-                    color: '#10b981',
-                    fontWeight: '600',
-                    fontSize: '13px',
-                    cursor: 'pointer'
-                  }}
-                >
-                  <svg style={{ width: '16px', height: '16px' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
-                  </svg>
-                  Add Item
-                </button>
-              </div>
-
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                {formData.items.map((item, index) => (
-                  <div
-                    key={index}
-                    style={{
-                      padding: '16px',
-                      background: '#f9fafb',
-                      borderRadius: '12px',
-                      border: '1px solid #e5e7eb'
-                    }}
-                  >
-                    <div style={{
-                      display: 'grid',
-                      gridTemplateColumns: isMobile ? '1fr' : '2fr 1fr auto',
-                      gap: '12px',
-                      alignItems: 'end'
-                    }}>
-                      <div>
-                        <label style={{ fontSize: '12px', color: '#6b7280', marginBottom: '4px', display: 'block' }}>
-                          Part/Item
-                        </label>
-                        <select
-                          value={item.partId}
-                          onChange={(e) => updateItem(index, 'partId', e.target.value)}
-                          required
-                          style={{
-                            width: '100%',
-                            padding: '10px 12px',
-                            border: '2px solid #e5e7eb',
-                            borderRadius: '10px',
-                            fontSize: '14px',
-                            background: 'white'
-                          }}
-                        >
-                          <option value="">Select part...</option>
-                          {parts.map(part => (
-                            <option key={part.id} value={part.id}>
-                              {part.name} ({part.partNumber}) - Stock: {part.quantity}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-                      <div>
-                        <label style={{ fontSize: '12px', color: '#6b7280', marginBottom: '4px', display: 'block' }}>
-                          Quantity
-                        </label>
-                        <input
-                          type="number"
-                          value={item.quantity}
-                          onChange={(e) => updateItem(index, 'quantity', parseInt(e.target.value) || 1)}
-                          min="1"
-                          required
-                          style={{
-                            width: '100%',
-                            padding: '10px 12px',
-                            border: '2px solid #e5e7eb',
-                            borderRadius: '10px',
-                            fontSize: '14px'
-                          }}
-                        />
-                      </div>
-                      {formData.items.length > 1 && (
-                        <button
-                          type="button"
-                          onClick={() => removeItem(index)}
-                          style={{
-                            padding: '10px',
-                            background: '#fee2e2',
-                            border: 'none',
-                            borderRadius: '10px',
-                            color: '#ef4444',
-                            cursor: 'pointer'
-                          }}
-                        >
-                          <svg style={{ width: '20px', height: '20px' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                          </svg>
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* Notes */}
-            <div>
-              <label style={{
-                display: 'block',
-                fontSize: '14px',
-                fontWeight: '600',
-                color: '#374151',
-                marginBottom: '8px'
-              }}>
-                Additional Notes
-              </label>
-              <textarea
-                value={formData.notes}
-                onChange={(e) => setFormData(prev => ({ ...prev, notes: e.target.value }))}
-                rows={3}
-                placeholder="Any special instructions or notes..."
-                style={{
-                  width: '100%',
-                  padding: '12px 16px',
-                  border: '2px solid #e5e7eb',
-                  borderRadius: '12px',
-                  fontSize: '15px',
-                  resize: 'none'
-                }}
-              />
-            </div>
-          </div>
-
-          {/* Footer */}
-          <div style={{
-            padding: '20px 24px',
-            borderTop: '1px solid #e5e7eb',
-            display: 'flex',
-            gap: '12px',
-            justifyContent: 'flex-end',
-            background: '#f9fafb'
-          }}>
-            <button
-              type="button"
-              onClick={onClose}
-              disabled={submitting}
-              style={{
-                padding: '12px 24px',
-                border: '2px solid #e5e7eb',
-                borderRadius: '12px',
-                background: 'white',
-                color: '#374151',
-                fontWeight: '600',
-                cursor: 'pointer',
-                opacity: submitting ? 0.5 : 1
-              }}
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={submitting || jobs.length === 0}
-              style={{
-                padding: '12px 24px',
-                border: 'none',
-                borderRadius: '12px',
-                background: 'linear-gradient(135deg, #14b8a6 0%, #0891b2 100%)',
-                color: 'white',
-                fontWeight: '600',
-                cursor: submitting || jobs.length === 0 ? 'not-allowed' : 'pointer',
-                opacity: submitting || jobs.length === 0 ? 0.6 : 1,
-                display: 'flex',
-                alignItems: 'center',
-                gap: '8px'
-              }}
-            >
-              {submitting && (
-                <div style={{
-                  width: '18px',
-                  height: '18px',
-                  border: '2px solid rgba(255,255,255,0.3)',
-                  borderTopColor: 'white',
-                  borderRadius: '50%',
-                  animation: 'spin 1s linear infinite'
-                }} />
-              )}
-              Submit Request
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>
-  );
-}
-
-function DetailModal({
-  isMobile,
-  request,
-  getStatusConfig,
-  getUrgencyConfig,
-  isManager,
-  onClose,
-  onApprove,
-  onReject,
-  submitting
-}) {
-  const [rejectionReason, setRejectionReason] = useState('');
-  const [showRejectForm, setShowRejectForm] = useState(false);
-  
-  const statusConfig = getStatusConfig(request.status);
-  const urgencyConfig = getUrgencyConfig(request.urgency);
+// ══════════════════════════════════════════════
+// DETAIL MODAL
+// ══════════════════════════════════════════════
+function DetailModal({ request, isMobile, isMgr, onClose, onApprove, onReject, submitting }) {
+  const [reason, setReason] = useState('');
+  const [showReject, setShowReject] = useState(false);
+  const sc = getSC(request.status);
+  const uc = getUC(request.urgency);
 
   return (
-    <div
-      style={{
-        position: 'fixed',
-        top: 0,
-        left: 0,
-        right: 0,
-        bottom: 0,
-        background: 'rgba(0,0,0,0.5)',
-        backdropFilter: 'blur(4px)',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        zIndex: 50,
-        padding: '16px'
-      }}
-      onClick={onClose}
-    >
-      <div
-        style={{
-          background: 'white',
-          borderRadius: '24px',
-          boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)',
-          width: '100%',
-          maxWidth: '600px',
-          maxHeight: '90vh',
-          overflow: 'hidden',
-          animation: 'slideUp 0.3s ease-out'
-        }}
-        onClick={(e) => e.stopPropagation()}
-      >
-        {/* Header */}
+    <Overlay onClose={onClose}>
+      <div style={{ maxWidth: 560, width: '100%' }}>
+        {/* header */}
         <div style={{
-          background: '#1f2937',
-          padding: '24px',
-          color: 'white'
+          padding: '20px 24px',
+          background: 'linear-gradient(135deg,rgba(255,255,255,.06),rgba(255,255,255,.02))',
+          borderRadius: '20px 20px 0 0',
+          border: '1px solid rgba(255,255,255,.08)', borderBottom: 'none',
         }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
             <div>
-              <p style={{ fontSize: '14px', opacity: 0.7, margin: 0, marginBottom: '4px' }}>Request</p>
-              <h2 style={{ fontSize: '24px', fontWeight: '700', margin: 0, marginBottom: '12px' }}>
-                {request.requestNumber}
-              </h2>
-              <div style={{ display: 'flex', gap: '8px' }}>
-                <span style={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: '4px',
-                  padding: '4px 12px',
-                  borderRadius: '20px',
-                  fontSize: '13px',
-                  fontWeight: '600',
-                  background: statusConfig.bg,
-                  color: statusConfig.color
-                }}>
-                  {statusConfig.icon} {statusConfig.label}
-                </span>
-                <span style={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: '4px',
-                  padding: '4px 12px',
-                  borderRadius: '20px',
-                  fontSize: '13px',
-                  fontWeight: '600',
-                  background: 'rgba(255,255,255,0.15)',
-                  color: 'white'
-                }}>
-                  {urgencyConfig.icon} {urgencyConfig.label}
-                </span>
+              <p style={{ margin: '0 0 4px', fontSize: 11, color: 'rgba(255,255,255,.35)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.5px' }}>Request</p>
+              <h2 style={{ margin: '0 0 10px', fontSize: 22, fontWeight: 800, color: 'white' }}>{request.requestNumber}</h2>
+              <div style={{ display: 'flex', gap: 6 }}>
+                <Badge text={`${sc.icon} ${sc.label}`} bg={sc.bg} border={sc.border} color={sc.c} />
+                <Badge text={`${uc.icon} ${uc.label}`} bg="rgba(255,255,255,.06)" border="rgba(255,255,255,.1)" color={uc.c} />
               </div>
             </div>
-            <button
-              onClick={onClose}
-              style={{
-                padding: '8px',
-                background: 'rgba(255,255,255,0.1)',
-                border: 'none',
-                borderRadius: '10px',
-                color: 'white',
-                cursor: 'pointer'
-              }}
-            >
-              <svg style={{ width: '20px', height: '20px' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-              </svg>
-            </button>
+            <CloseBtn onClick={onClose} />
           </div>
         </div>
 
-        {/* Content */}
-        <div style={{ padding: '24px', maxHeight: 'calc(90vh - 250px)', overflowY: 'auto' }}>
-          {/* Job Info */}
-          <div style={{
-            background: '#f8fafc',
-            borderRadius: '12px',
-            padding: '16px',
-            marginBottom: '20px'
-          }}>
-            <p style={{ fontSize: '13px', color: '#6b7280', margin: 0, marginBottom: '8px', fontWeight: '600' }}>
-              FOR JOB
-            </p>
-            <p style={{ fontSize: '16px', fontWeight: '600', color: '#1a202c', margin: 0, marginBottom: '4px' }}>
-              {request.job?.jobNumber}
-            </p>
-            <p style={{ fontSize: '14px', color: '#6b7280', margin: 0 }}>
+        {/* body */}
+        <div style={{
+          padding: isMobile ? 20 : 24,
+          background: 'rgba(15,23,42,.97)',
+          borderRadius: '0 0 20px 20px',
+          border: '1px solid rgba(255,255,255,.06)', borderTop: 'none',
+          maxHeight: 'calc(75vh - 180px)', overflowY: 'auto',
+        }}>
+          {/* job info */}
+          <div style={{ padding: 14, borderRadius: 12, background: 'rgba(255,255,255,.03)', border: '1px solid rgba(255,255,255,.06)', marginBottom: 18 }}>
+            <p style={{ margin: '0 0 6px', fontSize: 10, color: 'rgba(255,255,255,.35)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.5px' }}>For Job</p>
+            <p style={{ margin: 0, fontWeight: 700, color: 'white', fontSize: 15 }}>{request.job?.jobNumber}</p>
+            <p style={{ margin: '2px 0 0', fontSize: 13, color: 'rgba(255,255,255,.4)' }}>
               {request.job?.vehicle?.licensePlate} • {request.job?.vehicle?.make} {request.job?.vehicle?.model}
             </p>
           </div>
 
-          {/* Requester Info */}
-          <div style={{
-            display: 'grid',
-            gridTemplateColumns: '1fr 1fr',
-            gap: '16px',
-            marginBottom: '20px'
-          }}>
+          {/* meta */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14, marginBottom: 18 }}>
             <div>
-              <p style={{ fontSize: '12px', color: '#6b7280', margin: 0, marginBottom: '4px' }}>Requested By</p>
-              <p style={{ fontSize: '14px', fontWeight: '600', color: '#1a202c', margin: 0 }}>
-                {request.requestedBy?.name}
-              </p>
+              <p style={{ margin: '0 0 3px', fontSize: 10, color: 'rgba(255,255,255,.35)', fontWeight: 600 }}>Requested By</p>
+              <p style={{ margin: 0, fontSize: 14, fontWeight: 700, color: 'white' }}>{request.requestedBy?.name}</p>
             </div>
             <div>
-              <p style={{ fontSize: '12px', color: '#6b7280', margin: 0, marginBottom: '4px' }}>Date</p>
-              <p style={{ fontSize: '14px', fontWeight: '600', color: '#1a202c', margin: 0 }}>
-                {new Date(request.createdAt).toLocaleDateString('en-IN', {
-                  day: 'numeric',
-                  month: 'short',
-                  year: 'numeric'
-                })}
+              <p style={{ margin: '0 0 3px', fontSize: 10, color: 'rgba(255,255,255,.35)', fontWeight: 600 }}>Date</p>
+              <p style={{ margin: 0, fontSize: 14, fontWeight: 700, color: 'white' }}>
+                {new Date(request.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
               </p>
             </div>
           </div>
 
-          {/* Items */}
-          <div style={{ marginBottom: '20px' }}>
-            <p style={{ fontSize: '13px', color: '#6b7280', margin: 0, marginBottom: '12px', fontWeight: '600' }}>
-              REQUESTED ITEMS
-            </p>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-              {request.items?.map((item, index) => (
-                <div 
-                  key={index}
-                  style={{
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    alignItems: 'center',
-                    padding: '12px 16px',
-                    background: '#f9fafb',
-                    borderRadius: '10px'
-                  }}
-                >
+          {/* items */}
+          <div style={{ marginBottom: 18 }}>
+            <p style={{ margin: '0 0 10px', fontSize: 10, color: 'rgba(255,255,255,.35)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.5px' }}>Requested Items</p>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {request.items?.map((item, i) => (
+                <div key={i} style={{
+                  display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                  padding: '11px 14px', borderRadius: 11,
+                  background: 'rgba(255,255,255,.03)', border: '1px solid rgba(255,255,255,.05)',
+                }}>
                   <div>
-                    <p style={{ fontWeight: '600', color: '#1a202c', margin: 0, marginBottom: '2px', fontSize: '14px' }}>
-                      {item.part?.name}
-                    </p>
-                    <p style={{ fontSize: '12px', color: '#6b7280', margin: 0, fontFamily: 'monospace' }}>
-                      {item.part?.partNumber}
-                    </p>
+                    <p style={{ margin: 0, fontWeight: 700, color: 'white', fontSize: 13 }}>{item.part?.name}</p>
+                    <p style={{ margin: '1px 0 0', fontSize: 11, color: 'rgba(255,255,255,.35)', fontFamily: 'monospace' }}>{item.part?.partNumber}</p>
                   </div>
                   <div style={{ textAlign: 'right' }}>
-                    <p style={{ fontWeight: '700', color: '#1a202c', margin: 0, fontSize: '16px' }}>
-                      {item.quantityRequested}
-                    </p>
-                    {item.quantityApproved !== null && (
-                      <p style={{ 
-                        fontSize: '12px', 
-                        color: item.quantityApproved === item.quantityRequested ? '#10b981' : '#f59e0b', 
-                        margin: 0 
-                      }}>
+                    <p style={{ margin: 0, fontWeight: 800, color: 'white', fontSize: 16 }}>{item.quantityRequested}</p>
+                    {item.quantityApproved != null && (
+                      <p style={{ margin: 0, fontSize: 11, color: item.quantityApproved === item.quantityRequested ? '#6ee7b7' : '#fcd34d' }}>
                         Approved: {item.quantityApproved}
                       </p>
                     )}
@@ -1435,370 +750,264 @@ function DetailModal({
             </div>
           </div>
 
-          {/* Notes */}
+          {/* notes */}
           {request.notes && (
-            <div style={{ marginBottom: '20px' }}>
-              <p style={{ fontSize: '12px', color: '#6b7280', margin: 0, marginBottom: '4px' }}>Notes</p>
-              <p style={{ fontSize: '14px', color: '#1a202c', margin: 0 }}>{request.notes}</p>
+            <div style={{ marginBottom: 18 }}>
+              <p style={{ margin: '0 0 4px', fontSize: 10, color: 'rgba(255,255,255,.35)', fontWeight: 600 }}>Notes</p>
+              <p style={{ margin: 0, fontSize: 13, color: 'rgba(255,255,255,.6)' }}>{request.notes}</p>
             </div>
           )}
 
-          {/* Rejection Reason */}
+          {/* rejection reason */}
           {request.status === 'REJECTED' && request.rejectionReason && (
-            <div style={{
-              background: '#fef2f2',
-              borderRadius: '12px',
-              padding: '16px',
-              border: '1px solid #fecaca'
-            }}>
-              <p style={{ fontSize: '12px', color: '#b91c1c', margin: 0, marginBottom: '4px', fontWeight: '600' }}>
-                Rejection Reason
-              </p>
-              <p style={{ fontSize: '14px', color: '#dc2626', margin: 0 }}>{request.rejectionReason}</p>
+            <div style={{ padding: 14, borderRadius: 12, background: 'rgba(239,68,68,.08)', border: '1px solid rgba(239,68,68,.2)' }}>
+              <p style={{ margin: '0 0 4px', fontSize: 10, color: '#fca5a5', fontWeight: 700 }}>Rejection Reason</p>
+              <p style={{ margin: 0, fontSize: 13, color: '#fca5a5' }}>{request.rejectionReason}</p>
             </div>
           )}
 
-          {/* Reject Form */}
-          {isManager && request.status === 'PENDING' && showRejectForm && (
-            <div style={{
-              background: '#fef2f2',
-              borderRadius: '12px',
-              padding: '16px',
-              marginTop: '16px'
-            }}>
-              <p style={{ fontSize: '14px', fontWeight: '600', color: '#b91c1c', margin: 0, marginBottom: '12px' }}>
-                Rejection Reason
-              </p>
-              <textarea
-                value={rejectionReason}
-                onChange={(e) => setRejectionReason(e.target.value)}
-                rows={3}
-                placeholder="Explain why this request is being rejected..."
-                style={{
-                  width: '100%',
-                  padding: '12px',
-                  border: '1px solid #fecaca',
-                  borderRadius: '8px',
-                  fontSize: '14px',
-                  resize: 'none',
-                  marginBottom: '12px'
-                }}
-              />
-              <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
-                <button
-                  onClick={() => {
-                    setShowRejectForm(false);
-                    setRejectionReason('');
-                  }}
-                  style={{
-                    padding: '8px 16px',
-                    background: 'white',
-                    border: '1px solid #e5e7eb',
-                    borderRadius: '8px',
-                    cursor: 'pointer'
-                  }}
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={() => onReject(rejectionReason)}
-                  disabled={submitting}
-                  style={{
-                    padding: '8px 16px',
-                    background: '#ef4444',
-                    border: 'none',
-                    borderRadius: '8px',
-                    color: 'white',
-                    fontWeight: '600',
-                    cursor: 'pointer',
-                    opacity: submitting ? 0.5 : 1
-                  }}
-                >
-                  {submitting ? 'Rejecting...' : 'Confirm Reject'}
-                </button>
+          {/* reject form */}
+          {isMgr && request.status === 'PENDING' && showReject && (
+            <div style={{ padding: 14, borderRadius: 12, background: 'rgba(239,68,68,.06)', border: '1px solid rgba(239,68,68,.15)', marginTop: 14 }}>
+              <p style={{ margin: '0 0 8px', fontSize: 13, fontWeight: 700, color: '#fca5a5' }}>Rejection Reason</p>
+              <textarea className="ir-input" value={reason} onChange={(e) => setReason(e.target.value)}
+                rows={3} placeholder="Explain why..." style={{ resize: 'none', borderColor: 'rgba(239,68,68,.2)' }} />
+              <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 10 }}>
+                <Btn onClick={() => { setShowReject(false); setReason(''); }} label="Cancel" outline color="rgba(255,255,255,.4)" />
+                <button onClick={() => onReject(reason)} disabled={submitting} className="ir-btn" style={{
+                  padding: '8px 16px', borderRadius: 10,
+                  background: 'linear-gradient(135deg,#ef4444,#dc2626)',
+                  border: 'none', color: 'white', fontWeight: 700, fontSize: 13,
+                  opacity: submitting ? .6 : 1,
+                }}>{submitting ? 'Rejecting...' : 'Confirm Reject'}</button>
               </div>
             </div>
           )}
-        </div>
 
-        {/* Footer */}
-        {isManager && request.status === 'PENDING' && !showRejectForm && (
-          <div style={{
-            padding: '20px 24px',
-            borderTop: '1px solid #e5e7eb',
-            display: 'flex',
-            gap: '12px',
-            justifyContent: 'flex-end',
-            background: '#f9fafb'
-          }}>
-            <button
-              onClick={() => setShowRejectForm(true)}
-              style={{
-                padding: '12px 24px',
-                border: '2px solid #ef4444',
-                borderRadius: '12px',
-                background: 'white',
-                color: '#ef4444',
-                fontWeight: '600',
-                cursor: 'pointer'
-              }}
-            >
-              Reject
-            </button>
-            <button
-              onClick={onApprove}
-              style={{
-                padding: '12px 24px',
-                border: 'none',
-                borderRadius: '12px',
-                background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
-                color: 'white',
-                fontWeight: '600',
-                cursor: 'pointer'
-              }}
-            >
-              Approve Items
-            </button>
-          </div>
-        )}
+          {/* manager actions */}
+          {isMgr && request.status === 'PENDING' && !showReject && (
+            <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 20, paddingTop: 16, borderTop: '1px solid rgba(255,255,255,.06)' }}>
+              <Btn onClick={() => setShowReject(true)} label="Reject" outline color="#fca5a5" borderColor="rgba(239,68,68,.3)" />
+              <Btn onClick={onApprove} label="Approve Items" grad="linear-gradient(135deg,#10b981,#059669)" glow="rgba(16,185,129,.3)" />
+            </div>
+          )}
+        </div>
       </div>
-    </div>
+    </Overlay>
   );
 }
 
-function ApproveModal({
-  isMobile,
-  request,
-  onClose,
-  onApprove,
-  submitting
-}) {
-  const [itemApprovals, setItemApprovals] = useState(
-    request.items?.map(item => ({
-      id: item.id,
-      partId: item.partId,
-      partName: item.part?.name,
-      quantityRequested: item.quantityRequested,
-      quantityApproved: item.quantityRequested,
-      available: item.part?.quantity || 0
+// ══════════════════════════════════════════════
+// APPROVE MODAL
+// ══════════════════════════════════════════════
+function ApproveModal({ request, isMobile, onClose, onApprove, submitting }) {
+  const [items, setItems] = useState(
+    request.items?.map(i => ({
+      id: i.id, partId: i.partId, partName: i.part?.name,
+      quantityRequested: i.quantityRequested,
+      quantityApproved: i.quantityRequested,
+      available: i.part?.quantity || 0,
     })) || []
   );
 
-  const handleQuantityChange = (itemId, value) => {
-    setItemApprovals(prev => prev.map(item => 
-      item.id === itemId ? { ...item, quantityApproved: parseInt(value) || 0 } : item
-    ));
-  };
-
-  const handleSubmit = () => {
-    const items = itemApprovals.map(item => ({
-      id: item.id,
-      quantityApproved: item.quantityApproved
-    }));
-    onApprove(items);
-  };
-
-  const hasValidApproval = itemApprovals.some(item => item.quantityApproved > 0);
-  const hasStockIssue = itemApprovals.some(item => item.quantityApproved > item.available);
+  const handleQty = (id, v) => setItems(p => p.map(i => i.id === id ? { ...i, quantityApproved: parseInt(v) || 0 } : i));
+  const hasValid = items.some(i => i.quantityApproved > 0);
+  const hasOver = items.some(i => i.quantityApproved > i.available);
 
   return (
-    <div
-      style={{
-        position: 'fixed',
-        top: 0,
-        left: 0,
-        right: 0,
-        bottom: 0,
-        background: 'rgba(0,0,0,0.5)',
-        backdropFilter: 'blur(4px)',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        zIndex: 50,
-        padding: '16px'
-      }}
-      onClick={onClose}
-    >
-      <div
-        style={{
-          background: 'white',
-          borderRadius: '24px',
-          boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)',
-          width: '100%',
-          maxWidth: '600px',
-          maxHeight: '90vh',
-          overflow: 'hidden',
-          animation: 'slideUp 0.3s ease-out'
-        }}
-        onClick={(e) => e.stopPropagation()}
-      >
-        {/* Header */}
+    <Overlay onClose={onClose}>
+      <div style={{ maxWidth: 560, width: '100%' }}>
+        <MHead grad="linear-gradient(135deg,#10b981,#059669)"
+          title="✅ Approve Request" sub={`${request.requestNumber} • Set quantities`}
+          onClose={onClose} />
+
         <div style={{
-          background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
-          padding: '24px',
-          color: 'white'
+          padding: isMobile ? 20 : 24,
+          background: 'rgba(15,23,42,.97)',
+          borderRadius: '0 0 20px 20px',
+          border: '1px solid rgba(255,255,255,.06)', borderTop: 'none',
+          maxHeight: 'calc(75vh - 200px)', overflowY: 'auto',
         }}>
-          <h2 style={{ fontSize: '24px', fontWeight: '700', margin: 0, marginBottom: '4px' }}>
-            ✅ Approve Request
-          </h2>
-          <p style={{ fontSize: '14px', opacity: 0.9, margin: 0 }}>
-            {request.requestNumber} • Set approved quantities
-          </p>
-        </div>
-
-        {/* Content */}
-        <div style={{ padding: '24px', maxHeight: 'calc(90vh - 200px)', overflowY: 'auto' }}>
-          <p style={{ fontSize: '14px', color: '#6b7280', marginTop: 0, marginBottom: '20px' }}>
-            Adjust the quantities to approve. Items with 0 quantity will not be issued.
+          <p style={{ margin: '0 0 18px', fontSize: 13, color: 'rgba(255,255,255,.4)' }}>
+            Adjust quantities. Items with 0 won't be issued.
           </p>
 
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-            {itemApprovals.map((item, index) => {
-              const isOverStock = item.quantityApproved > item.available;
-              
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 18 }}>
+            {items.map(item => {
+              const over = item.quantityApproved > item.available;
               return (
-                <div
-                  key={item.id}
-                  style={{
-                    padding: '16px',
-                    background: isOverStock ? '#fef2f2' : '#f9fafb',
-                    borderRadius: '12px',
-                    border: `2px solid ${isOverStock ? '#fecaca' : '#e5e7eb'}`
-                  }}
-                >
-                  <div style={{
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    alignItems: 'flex-start',
-                    marginBottom: '12px'
-                  }}>
-                    <div>
-                      <p style={{ fontWeight: '600', color: '#1a202c', margin: 0, marginBottom: '2px' }}>
-                        {item.partName}
-                      </p>
-                      <p style={{ fontSize: '13px', color: '#6b7280', margin: 0 }}>
-                        Requested: {item.quantityRequested} • Available: {item.available}
-                      </p>
-                    </div>
-                  </div>
-
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                    <label style={{ fontSize: '14px', color: '#374151', fontWeight: '500' }}>
-                      Approve:
-                    </label>
-                    <input
-                      type="number"
-                      value={item.quantityApproved}
-                      onChange={(e) => handleQuantityChange(item.id, e.target.value)}
-                      min="0"
-                      max={item.available}
-                      style={{
-                        width: '100px',
-                        padding: '10px 12px',
-                        border: `2px solid ${isOverStock ? '#fecaca' : '#e5e7eb'}`,
-                        borderRadius: '10px',
-                        fontSize: '16px',
-                        fontWeight: '600',
-                        textAlign: 'center'
-                      }}
-                    />
-                    <span style={{ fontSize: '13px', color: '#6b7280' }}>
-                      / {item.quantityRequested} requested
-                    </span>
-                  </div>
-
-                  {isOverStock && (
-                    <p style={{
-                      fontSize: '12px',
-                      color: '#ef4444',
-                      margin: 0,
-                      marginTop: '8px',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '4px'
-                    }}>
-                      ⚠️ Exceeds available stock!
+                <div key={item.id} style={{
+                  padding: 14, borderRadius: 14,
+                  background: over ? 'rgba(239,68,68,.06)' : 'rgba(255,255,255,.025)',
+                  border: `1.5px solid ${over ? 'rgba(239,68,68,.25)' : 'rgba(255,255,255,.06)'}`,
+                }}>
+                  <div style={{ marginBottom: 10 }}>
+                    <p style={{ margin: 0, fontWeight: 700, color: 'white', fontSize: 14 }}>{item.partName}</p>
+                    <p style={{ margin: '2px 0 0', fontSize: 12, color: 'rgba(255,255,255,.4)' }}>
+                      Requested: {item.quantityRequested} • Available: {item.available}
                     </p>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                    <span style={{ fontSize: 13, color: 'rgba(255,255,255,.5)', fontWeight: 600 }}>Approve:</span>
+                    <input className="ir-input" type="number" value={item.quantityApproved}
+                      onChange={(e) => handleQty(item.id, e.target.value)}
+                      min="0" max={item.available}
+                      style={{ width: 90, textAlign: 'center', fontSize: 16, fontWeight: 700, borderColor: over ? 'rgba(239,68,68,.3)' : undefined }} />
+                    <span style={{ fontSize: 12, color: 'rgba(255,255,255,.35)' }}>/ {item.quantityRequested}</span>
+                  </div>
+                  {over && (
+                    <p style={{ margin: '8px 0 0', fontSize: 11, color: '#fca5a5' }}>⚠️ Exceeds available stock!</p>
                   )}
                 </div>
               );
             })}
           </div>
 
-          {/* Summary */}
+          {/* summary */}
           <div style={{
-            marginTop: '20px',
-            padding: '16px',
-            background: '#f0fdf4',
-            borderRadius: '12px',
-            border: '1px solid #bbf7d0'
+            padding: 14, borderRadius: 12,
+            background: 'rgba(16,185,129,.08)', border: '1px solid rgba(16,185,129,.2)',
           }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <span style={{ fontWeight: '600', color: '#15803d' }}>Total Items Approved</span>
-              <span style={{ fontWeight: '700', fontSize: '18px', color: '#15803d' }}>
-                {itemApprovals.filter(i => i.quantityApproved > 0).length} / {itemApprovals.length}
+              <span style={{ fontWeight: 700, fontSize: 13, color: '#6ee7b7' }}>Items Approved</span>
+              <span style={{ fontWeight: 800, fontSize: 17, color: '#6ee7b7' }}>
+                {items.filter(i => i.quantityApproved > 0).length} / {items.length}
               </span>
             </div>
           </div>
-        </div>
 
-        {/* Footer */}
-        <div style={{
-          padding: '20px 24px',
-          borderTop: '1px solid #e5e7eb',
-          display: 'flex',
-          gap: '12px',
-          justifyContent: 'flex-end',
-          background: '#f9fafb'
-        }}>
-          <button
-            onClick={onClose}
-            disabled={submitting}
-            style={{
-              padding: '12px 24px',
-              border: '2px solid #e5e7eb',
-              borderRadius: '12px',
-              background: 'white',
-              color: '#374151',
-              fontWeight: '600',
-              cursor: 'pointer',
-              opacity: submitting ? 0.5 : 1
-            }}
-          >
-            Cancel
-          </button>
-          <button
-            onClick={handleSubmit}
-            disabled={submitting || !hasValidApproval || hasStockIssue}
-            style={{
-              padding: '12px 24px',
-              border: 'none',
-              borderRadius: '12px',
-              background: hasValidApproval && !hasStockIssue
-                ? 'linear-gradient(135deg, #10b981 0%, #059669 100%)'
-                : '#e5e7eb',
-              color: hasValidApproval && !hasStockIssue ? 'white' : '#9ca3af',
-              fontWeight: '600',
-              cursor: hasValidApproval && !hasStockIssue ? 'pointer' : 'not-allowed',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '8px'
-            }}
-          >
-            {submitting && (
-              <div style={{
-                width: '18px',
-                height: '18px',
-                border: '2px solid rgba(255,255,255,0.3)',
-                borderTopColor: 'white',
-                borderRadius: '50%',
-                animation: 'spin 1s linear infinite'
-              }} />
-            )}
-            {submitting ? 'Approving...' : 'Confirm Approval'}
-          </button>
+          {/* footer */}
+          <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 20, paddingTop: 16, borderTop: '1px solid rgba(255,255,255,.06)' }}>
+            <Btn onClick={onClose} label="Cancel" outline color="rgba(255,255,255,.4)" disabled={submitting} />
+            <button onClick={() => onApprove(items.map(i => ({ id: i.id, quantityApproved: i.quantityApproved })))}
+              disabled={submitting || !hasValid || hasOver}
+              className="ir-btn" style={{
+                padding: '10px 22px', borderRadius: 12,
+                background: (hasValid && !hasOver) ? 'linear-gradient(135deg,#10b981,#059669)' : 'rgba(255,255,255,.06)',
+                border: 'none',
+                color: (hasValid && !hasOver) ? 'white' : 'rgba(255,255,255,.3)',
+                fontSize: 13, fontWeight: 700,
+                opacity: (submitting || !hasValid || hasOver) ? .5 : 1,
+                boxShadow: (hasValid && !hasOver) ? '0 4px 14px rgba(16,185,129,.3)' : 'none',
+                display: 'flex', alignItems: 'center', gap: 8,
+              }}>
+              {submitting && <Spin />}
+              {submitting ? 'Approving...' : 'Confirm Approval'}
+            </button>
+          </div>
         </div>
+      </div>
+    </Overlay>
+  );
+}
+
+// ══════════════════════════════════════════════
+// SHARED UI COMPONENTS
+// ══════════════════════════════════════════════
+function Overlay({ children, onClose }) {
+  return (
+    <div className="ir-overlay" onClick={onClose} style={{
+      position: 'fixed', inset: 0, zIndex: 100,
+      background: 'rgba(0,0,0,.65)',
+      backdropFilter: 'blur(8px)', WebkitBackdropFilter: 'blur(8px)',
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+      padding: 16,
+    }}>
+      <div className="ir-modal" onClick={(e) => e.stopPropagation()}>
+        {children}
       </div>
     </div>
   );
+}
+
+function MHead({ grad, title, sub, onClose }) {
+  return (
+    <div style={{
+      padding: '18px 22px', background: grad,
+      borderRadius: '20px 20px 0 0',
+      position: 'relative', overflow: 'hidden',
+    }}>
+      <div style={{ position: 'absolute', top: -30, right: -30, width: 80, height: 80, borderRadius: '50%', background: 'rgba(255,255,255,.1)', pointerEvents: 'none' }} />
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', position: 'relative', zIndex: 1 }}>
+        <div>
+          <h2 style={{ margin: 0, fontSize: 17, fontWeight: 800, color: 'white' }}>{title}</h2>
+          <p style={{ margin: '3px 0 0', fontSize: 12, color: 'rgba(255,255,255,.7)' }}>{sub}</p>
+        </div>
+        <CloseBtn onClick={onClose} />
+      </div>
+    </div>
+  );
+}
+
+function MFoot({ onCancel, submitting, label, grad, glow, disabled }) {
+  return (
+    <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 22, paddingTop: 18, borderTop: '1px solid rgba(255,255,255,.06)' }}>
+      <Btn onClick={onCancel} label="Cancel" outline color="rgba(255,255,255,.4)" disabled={submitting} />
+      <button type="submit" disabled={submitting || disabled} className="ir-btn" style={{
+        padding: '10px 22px', borderRadius: 12,
+        background: grad, border: 'none',
+        color: 'white', fontSize: 13, fontWeight: 700,
+        opacity: (submitting || disabled) ? .5 : 1,
+        display: 'flex', alignItems: 'center', gap: 8,
+        boxShadow: `0 4px 14px ${glow}`,
+      }}>
+        {submitting && <Spin />}
+        {label}
+      </button>
+    </div>
+  );
+}
+
+function Badge({ text, bg, border, color }) {
+  return (
+    <span style={{
+      display: 'inline-flex', alignItems: 'center', gap: 3,
+      padding: '3px 10px', borderRadius: 14,
+      background: bg, border: `1px solid ${border}`,
+      color, fontSize: 11, fontWeight: 700,
+      whiteSpace: 'nowrap',
+    }}>{text}</span>
+  );
+}
+
+function Btn({ onClick, label, icon, grad, glow, outline, color, borderColor, disabled, full, style = {} }) {
+  return (
+    <button onClick={onClick} disabled={disabled} className="ir-btn" style={{
+      padding: '10px 20px', borderRadius: 12, fontSize: 13, fontWeight: 700,
+      background: outline ? 'transparent' : (grad || 'rgba(255,255,255,.06)'),
+      border: outline ? `1px solid ${borderColor || color || 'rgba(255,255,255,.15)'}` : 'none',
+      color: outline ? (color || 'rgba(255,255,255,.6)') : 'white',
+      boxShadow: glow ? `0 4px 14px ${glow}` : 'none',
+      opacity: disabled ? .5 : 1,
+      display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+      width: full ? '100%' : 'auto',
+      ...style,
+    }}>
+      {icon && <span>{icon}</span>}
+      {label}
+    </button>
+  );
+}
+
+function CloseBtn({ onClick }) {
+  return (
+    <button onClick={onClick} style={{
+      width: 30, height: 30, borderRadius: 9,
+      background: 'rgba(255,255,255,.14)', border: 'none',
+      cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
+    }}>
+      <svg style={{ width: 15, height: 15, color: 'white' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M6 18L18 6M6 6l12 12" />
+      </svg>
+    </button>
+  );
+}
+
+function Spin() {
+  return <div style={{
+    width: 15, height: 15,
+    border: '2px solid rgba(255,255,255,.2)',
+    borderTopColor: 'white', borderRadius: '50%',
+    animation: 'irSpin .6s linear infinite', flexShrink: 0,
+  }} />;
 }

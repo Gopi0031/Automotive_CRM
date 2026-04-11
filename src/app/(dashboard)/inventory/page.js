@@ -5,6 +5,144 @@ import { useEffect, useState, useCallback } from 'react';
 import toast from 'react-hot-toast';
 import * as XLSX from 'xlsx';
 
+// ─── CSS ───
+const INV_CSS = `
+  @keyframes ivSlideUp  { from{opacity:0;transform:translateY(14px)} to{opacity:1;transform:translateY(0)} }
+  @keyframes ivScaleIn  { from{opacity:0;transform:scale(.94)} to{opacity:1;transform:scale(1)} }
+  @keyframes ivFadeIn   { from{opacity:0} to{opacity:1} }
+  @keyframes ivSpin     { from{transform:rotate(0)} to{transform:rotate(360deg)} }
+  @keyframes ivFloat    { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-6px)} }
+  @keyframes ivPulse    { 0%,100%{opacity:1} 50%{opacity:.65} }
+  @keyframes ivBarFill  { from{width:0} to{width:var(--fill)} }
+
+  .iv-glass {
+    background: rgba(255,255,255,.04);
+    backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
+    border: 1px solid rgba(255,255,255,.07);
+    border-radius: 18px;
+    transition: all .3s cubic-bezier(.4,0,.2,1);
+  }
+  .iv-glass:hover {
+    background: rgba(255,255,255,.06);
+    border-color: rgba(255,255,255,.11);
+  }
+  .iv-stat:hover { transform: translateY(-4px); box-shadow: 0 20px 48px rgba(0,0,0,.35); }
+  .iv-stat:hover .iv-stat-icon { transform: scale(1.12) rotate(6deg); }
+  .iv-btn { transition: all .22s ease; cursor: pointer; }
+  .iv-btn:hover { transform: translateY(-1px); }
+  .iv-btn:active { transform: translateY(0) scale(.98); }
+  .iv-row { transition: background .2s ease; }
+  .iv-row:hover { background: rgba(255,255,255,.04) !important; }
+  .iv-overlay { animation: ivFadeIn .25s ease; }
+  .iv-modal { animation: ivScaleIn .3s cubic-bezier(.4,0,.2,1); }
+
+  .iv-input {
+    background: rgba(255,255,255,.05);
+    border: 1px solid rgba(255,255,255,.1);
+    border-radius: 12px;
+    padding: 11px 14px;
+    color: white; font-size: 14px;
+    width: 100%; outline: none;
+    transition: all .22s ease;
+  }
+  .iv-input::placeholder { color: rgba(255,255,255,.28); }
+  .iv-input:focus {
+    border-color: rgba(20,184,166,.5);
+    background: rgba(255,255,255,.07);
+    box-shadow: 0 0 0 3px rgba(20,184,166,.12);
+  }
+  .iv-input:disabled {
+    opacity: .5; cursor: not-allowed;
+  }
+  .iv-select {
+    background: rgba(255,255,255,.05);
+    border: 1px solid rgba(255,255,255,.1);
+    border-radius: 12px;
+    padding: 11px 14px;
+    color: white; font-size: 14px;
+    width: 100%; outline: none;
+    appearance: none; cursor: pointer;
+    transition: all .22s ease;
+  }
+  .iv-select option { background: #1a1f35; color: white; }
+  .iv-select:focus {
+    border-color: rgba(20,184,166,.5);
+    box-shadow: 0 0 0 3px rgba(20,184,166,.12);
+  }
+  .iv-label {
+    display: block; font-size: 11px; font-weight: 700;
+    color: rgba(255,255,255,.45);
+    margin-bottom: 5px;
+    text-transform: uppercase; letter-spacing: .7px;
+  }
+  .iv-search {
+    background: rgba(255,255,255,.05);
+    border: 1px solid rgba(255,255,255,.08);
+    border-radius: 12px;
+    padding: 10px 14px 10px 40px;
+    color: white; font-size: 14px;
+    width: 100%; outline: none;
+    transition: all .22s ease;
+  }
+  .iv-search::placeholder { color: rgba(255,255,255,.28); }
+  .iv-search:focus {
+    border-color: rgba(20,184,166,.4);
+    background: rgba(255,255,255,.07);
+    box-shadow: 0 0 0 3px rgba(20,184,166,.1);
+  }
+
+  /* number input spinners */
+  input[type=number]::-webkit-inner-spin-button,
+  input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+  input[type=number] { -moz-appearance: textfield; }
+
+  @media(max-width:768px) {
+    .iv-stat:hover { transform: none; }
+    .iv-stat:hover .iv-stat-icon { transform: none; }
+    .iv-glass:hover { transform: none; }
+  }
+`;
+
+// ─── Categories ───
+const CATEGORIES = [
+  { value: 'PARTS', label: 'Parts', icon: '⚙️' },
+  { value: 'ACCESSORIES', label: 'Accessories', icon: '🔧' },
+  { value: 'FLUIDS', label: 'Fluids & Oils', icon: '🛢️' },
+  { value: 'FILTERS', label: 'Filters', icon: '🔲' },
+  { value: 'ELECTRICAL', label: 'Electrical', icon: '⚡' },
+  { value: 'BODY', label: 'Body Parts', icon: '🚗' },
+  { value: 'TYRES', label: 'Tyres & Wheels', icon: '🛞' },
+  { value: 'TOOLS', label: 'Tools', icon: '🔨' },
+  { value: 'OTHER', label: 'Other', icon: '📦' },
+];
+
+const catIcon = (c) => CATEGORIES.find(x => x.value === c)?.icon || '📦';
+
+const stockStatus = (p) => {
+  if (p.quantity === 0) return { label: 'Out of Stock', bg: 'rgba(239,68,68,.12)', border: 'rgba(239,68,68,.2)', color: '#fca5a5', icon: '❌' };
+  if (p.quantity <= p.minStockLevel) return { label: 'Low Stock', bg: 'rgba(245,158,11,.12)', border: 'rgba(245,158,11,.2)', color: '#fcd34d', icon: '⚠️' };
+  return { label: 'In Stock', bg: 'rgba(16,185,129,.12)', border: 'rgba(16,185,129,.2)', color: '#6ee7b7', icon: '✓' };
+};
+
+// ─── Animated number ───
+function AnimNum({ value, prefix = '' }) {
+  const [d, setD] = useState(0);
+  useEffect(() => {
+    const n = typeof value === 'number' ? value : parseInt(String(value).replace(/[^0-9]/g, '')) || 0;
+    if (!n) { setD(0); return; }
+    let c = 0; const inc = n / 30;
+    const t = setInterval(() => {
+      c += inc;
+      if (c >= n) { setD(n); clearInterval(t); } else setD(Math.floor(c));
+    }, 20);
+    return () => clearInterval(t);
+  }, [value]);
+  return <>{prefix}{d.toLocaleString('en-IN')}</>;
+}
+
+// ══════════════════════════════════════════════
+// MAIN PAGE
+// ══════════════════════════════════════════════
 export default function InventoryPage() {
   const [parts, setParts] = useState([]);
   const [branches, setBranches] = useState([]);
@@ -12,939 +150,384 @@ export default function InventoryPage() {
   const [currentUser, setCurrentUser] = useState(null);
   const [isMobile, setIsMobile] = useState(false);
 
-  // Modal states
+  // modals
   const [showModal, setShowModal] = useState(false);
   const [showDetailModal, setShowDetailModal] = useState(false);
   const [showAdjustModal, setShowAdjustModal] = useState(false);
-  const [showBulkUploadModal, setShowBulkUploadModal] = useState(false);
+  const [showBulkModal, setShowBulkModal] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(null);
   const [editingPart, setEditingPart] = useState(null);
   const [selectedPart, setSelectedPart] = useState(null);
   const [submitting, setSubmitting] = useState(false);
 
-  // Bulk upload states
+  // bulk
   const [uploadFile, setUploadFile] = useState(null);
   const [uploadPreview, setUploadPreview] = useState([]);
   const [uploadErrors, setUploadErrors] = useState([]);
   const [isProcessing, setIsProcessing] = useState(false);
 
-  // Filters
-  const [filters, setFilters] = useState({
-    search: '',
-    category: '',
-    lowStock: false,
-  });
+  // filters
+  const [filters, setFilters] = useState({ search: '', category: '', lowStock: false });
 
-  // Form data
+  // form
   const [formData, setFormData] = useState({
-    partNumber: '',
-    name: '',
-    description: '',
-    category: 'PARTS',
-    brand: '',
-    costPrice: '',
-    sellingPrice: '',
-    quantity: '',
-    minStockLevel: '5',
-    location: '',
-    supplier: '',
-    branchId: '',
+    partNumber: '', name: '', description: '', category: 'PARTS',
+    brand: '', costPrice: '', sellingPrice: '', quantity: '',
+    minStockLevel: '5', location: '', supplier: '', branchId: '',
   });
 
-  // Adjustment form
-  const [adjustmentData, setAdjustmentData] = useState({
-    type: 'add',
-    quantity: '',
-    reason: '',
-  });
+  // adjust
+  const [adjData, setAdjData] = useState({ type: 'add', quantity: '', reason: '' });
 
-  // Stats
+  // stats
   const [stats, setStats] = useState({
-    totalItems: 0,
-    totalValue: 0,
-    availableItems: 0,
-    lowStockCount: 0,
-    outOfStockCount: 0,
+    totalItems: 0, totalValue: 0, availableItems: 0,
+    lowStockCount: 0, outOfStockCount: 0,
   });
 
-  // Categories
-  const categories = [
-    { value: 'PARTS', label: 'Parts', icon: '⚙️' },
-    { value: 'ACCESSORIES', label: 'Accessories', icon: '🔧' },
-    { value: 'FLUIDS', label: 'Fluids & Oils', icon: '🛢️' },
-    { value: 'FILTERS', label: 'Filters', icon: '🔲' },
-    { value: 'ELECTRICAL', label: 'Electrical', icon: '⚡' },
-    { value: 'BODY', label: 'Body Parts', icon: '🚗' },
-    { value: 'TYRES', label: 'Tyres & Wheels', icon: '🛞' },
-    { value: 'TOOLS', label: 'Tools', icon: '🔨' },
-    { value: 'OTHER', label: 'Other', icon: '📦' },
-  ];
-
+  // ─── init ───
   useEffect(() => {
-    const checkMobile = () => {
-      setIsMobile(window.innerWidth < 768);
-    };
-    
-    checkMobile();
-    window.addEventListener('resize', checkMobile);
-    return () => window.removeEventListener('resize', checkMobile);
+    const check = () => setIsMobile(window.innerWidth < 768);
+    check(); window.addEventListener('resize', check);
+    return () => window.removeEventListener('resize', check);
   }, []);
 
   useEffect(() => {
-    const userData = localStorage.getItem('user');
-    if (userData) {
-      setCurrentUser(JSON.parse(userData));
-    }
-    fetchInitialData();
+    const u = localStorage.getItem('user');
+    if (u) setCurrentUser(JSON.parse(u));
+    fetchBranches();
   }, []);
 
-  useEffect(() => {
-    if (currentUser) {
-      fetchParts();
-    }
-  }, [filters, currentUser]);
+  useEffect(() => { if (currentUser) fetchParts(); }, [filters, currentUser]);
 
-  const fetchInitialData = async () => {
+  const fetchBranches = async () => {
     try {
-      const branchesRes = await fetch('/api/branches');
-      const branchesData = await branchesRes.json();
-      if (branchesData.success) {
-        setBranches(branchesData.data || []);
-      }
-    } catch (error) {
-      console.error('Error fetching branches:', error);
-    }
+      const r = await fetch('/api/branches');
+      const d = await r.json();
+      if (d.success) setBranches(d.data || []);
+    } catch {}
   };
 
   const fetchParts = useCallback(async () => {
     try {
       setLoading(true);
-      const params = new URLSearchParams();
-      if (filters.search) params.append('search', filters.search);
-      if (filters.category) params.append('category', filters.category);
-      if (filters.lowStock) params.append('lowStock', 'true');
-
-      const response = await fetch(`/api/inventory?${params.toString()}`);
-      const data = await response.json();
-
-      if (data.success) {
-        setParts(data.data || []);
-        calculateStats(data.data || []);
-      } else {
-        toast.error(data.message || 'Failed to load inventory');
+      const p = new URLSearchParams();
+      if (filters.search) p.append('search', filters.search);
+      if (filters.category) p.append('category', filters.category);
+      if (filters.lowStock) p.append('lowStock', 'true');
+      const r = await fetch(`/api/inventory?${p}`);
+      const d = await r.json();
+      if (d.success) {
+        setParts(d.data || []);
+        const data = d.data || [];
+        setStats({
+          totalItems: data.length,
+          totalValue: data.reduce((s, p) => s + p.sellingPrice * p.quantity, 0),
+          availableItems: data.filter(p => p.quantity > 0).length,
+          lowStockCount: data.filter(p => p.quantity <= p.minStockLevel && p.quantity > 0).length,
+          outOfStockCount: data.filter(p => p.quantity === 0).length,
+        });
       }
-    } catch (error) {
-      console.error('Error fetching parts:', error);
-      toast.error('Failed to load inventory');
-    } finally {
-      setLoading(false);
-    }
+    } catch { toast.error('Failed to load inventory'); }
+    finally { setLoading(false); }
   }, [filters]);
 
-  const calculateStats = (partsData) => {
-    const totalValue = partsData.reduce((sum, p) => sum + (p.sellingPrice * p.quantity), 0);
-    const availableItems = partsData.filter(p => p.quantity > 0).length;
-    const lowStockCount = partsData.filter(p => p.quantity <= p.minStockLevel && p.quantity > 0).length;
-    const outOfStockCount = partsData.filter(p => p.quantity === 0).length;
-
-    setStats({
-      totalItems: partsData.length,
-      totalValue,
-      availableItems,
-      lowStockCount,
-      outOfStockCount,
-    });
-  };
-
+  // ─── form handlers ───
+  const handleChange = (e) => setFormData(p => ({ ...p, [e.target.name]: e.target.value }));
   const handleFilterChange = (e) => {
     const { name, value, type, checked } = e.target;
-    setFilters(prev => ({ 
-      ...prev, 
-      [name]: type === 'checkbox' ? checked : value 
-    }));
-  };
-
-  const resetFilters = () => {
-    setFilters({
-      search: '',
-      category: '',
-      lowStock: false,
-    });
-  };
-
-  const handleChange = (e) => {
-    const { name, value } = e.target;
-    setFormData(prev => ({ ...prev, [name]: value }));
+    setFilters(p => ({ ...p, [name]: type === 'checkbox' ? checked : value }));
   };
 
   const resetForm = () => {
     setFormData({
-      partNumber: '',
-      name: '',
-      description: '',
-      category: 'PARTS',
-      brand: '',
-      costPrice: '',
-      sellingPrice: '',
-      quantity: '',
-      minStockLevel: '5',
-      location: '',
-      supplier: '',
-      branchId: '',
+      partNumber: '', name: '', description: '', category: 'PARTS',
+      brand: '', costPrice: '', sellingPrice: '', quantity: '',
+      minStockLevel: '5', location: '', supplier: '', branchId: '',
     });
     setEditingPart(null);
   };
 
-  const openCreateModal = () => {
-    resetForm();
-    setShowModal(true);
-  };
-
-  const openEditModal = (part) => {
+  const openCreate = () => { resetForm(); setShowModal(true); };
+  const openEdit = (part) => {
     setEditingPart(part);
     setFormData({
-      partNumber: part.partNumber,
-      name: part.name,
-      description: part.description || '',
-      category: part.category,
+      partNumber: part.partNumber, name: part.name,
+      description: part.description || '', category: part.category,
       brand: part.brand || '',
-      costPrice: part.costPrice.toString(),
-      sellingPrice: part.sellingPrice.toString(),
-      quantity: part.quantity.toString(),
-      minStockLevel: part.minStockLevel.toString(),
-      location: part.location || '',
-      supplier: part.supplier || '',
+      costPrice: String(part.costPrice), sellingPrice: String(part.sellingPrice),
+      quantity: String(part.quantity), minStockLevel: String(part.minStockLevel),
+      location: part.location || '', supplier: part.supplier || '',
       branchId: part.branchId || '',
     });
     setShowModal(true);
   };
-
-  const openDetailModal = (part) => {
+  const openAdjust = (part) => {
     setSelectedPart(part);
-    setShowDetailModal(true);
-  };
-
-  const openAdjustModal = (part) => {
-    setSelectedPart(part);
-    setAdjustmentData({ type: 'add', quantity: '', reason: '' });
+    setAdjData({ type: 'add', quantity: '', reason: '' });
     setShowAdjustModal(true);
   };
+  const openDetail = (part) => { setSelectedPart(part); setShowDetailModal(true); };
 
   const handleSubmit = async (e) => {
-    e.preventDefault();
-    setSubmitting(true);
-
+    e.preventDefault(); setSubmitting(true);
     try {
-      const url = '/api/inventory';
-      const method = editingPart ? 'PUT' : 'POST';
-
-      const payload = editingPart
-        ? { id: editingPart.id, ...formData }
-        : formData;
-
-      const response = await fetch(url, {
-        method,
+      const payload = editingPart ? { id: editingPart.id, ...formData } : formData;
+      const r = await fetch('/api/inventory', {
+        method: editingPart ? 'PUT' : 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        toast.error(data.message || `Failed to ${editingPart ? 'update' : 'add'} part`);
-        return;
-      }
-
-      toast.success(`Part ${editingPart ? 'updated' : 'added'} successfully`);
-      resetForm();
-      setShowModal(false);
-      fetchParts();
-    } catch (error) {
-      console.error('Error saving part:', error);
-      toast.error('An error occurred');
-    } finally {
-      setSubmitting(false);
-    }
+      const d = await r.json();
+      if (!r.ok) { toast.error(d.message || 'Failed'); return; }
+      toast.success(`Part ${editingPart ? 'updated' : 'added'}!`);
+      resetForm(); setShowModal(false); fetchParts();
+    } catch { toast.error('Error'); }
+    finally { setSubmitting(false); }
   };
 
-  const handleAdjustStock = async (e) => {
-    e.preventDefault();
-    if (!selectedPart) return;
-    setSubmitting(true);
-
+  const handleAdjust = async (e) => {
+    e.preventDefault(); if (!selectedPart) return; setSubmitting(true);
     try {
-      const response = await fetch('/api/inventory', {
+      const r = await fetch('/api/inventory', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           id: selectedPart.id,
-          adjustmentType: adjustmentData.type,
-          adjustmentQty: Number(adjustmentData.quantity),
+          adjustmentType: adjData.type,
+          adjustmentQty: Number(adjData.quantity),
         }),
       });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        toast.error(data.message || 'Failed to adjust stock');
-        return;
-      }
-
-      toast.success(`Stock ${adjustmentData.type === 'add' ? 'added' : 'reduced'} successfully`);
-      setShowAdjustModal(false);
-      setAdjustmentData({ type: 'add', quantity: '', reason: '' });
-      fetchParts();
-    } catch (error) {
-      console.error('Error adjusting stock:', error);
-      toast.error('An error occurred');
-    } finally {
-      setSubmitting(false);
-    }
+      const d = await r.json();
+      if (!r.ok) { toast.error(d.message || 'Failed'); return; }
+      toast.success(`Stock ${adjData.type === 'add' ? 'added' : 'reduced'}!`);
+      setShowAdjustModal(false); fetchParts();
+    } catch { toast.error('Error'); }
+    finally { setSubmitting(false); }
   };
 
   const handleDelete = async (part) => {
-    if (!confirm(`Are you sure you want to delete "${part.name}"?`)) return;
-
+    setSubmitting(true);
     try {
-      const response = await fetch(`/api/inventory?id=${part.id}`, {
-        method: 'DELETE',
-      });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        toast.error(data.message || 'Failed to delete part');
-        return;
-      }
-
-      toast.success(data.message);
-      fetchParts();
-    } catch (error) {
-      console.error('Error deleting part:', error);
-      toast.error('An error occurred');
-    }
+      const r = await fetch(`/api/inventory?id=${part.id}`, { method: 'DELETE' });
+      const d = await r.json();
+      if (!r.ok) { toast.error(d.message || 'Failed'); return; }
+      toast.success(d.message || 'Deleted');
+      setShowDeleteConfirm(null); fetchParts();
+    } catch { toast.error('Error'); }
+    finally { setSubmitting(false); }
   };
 
-  const getStockStatus = (part) => {
-    if (part.quantity === 0) {
-      return { label: 'Out of Stock', color: 'bg-red-100 text-red-800', icon: '❌' };
-    }
-    if (part.quantity <= part.minStockLevel) {
-      return { label: 'Low Stock', color: 'bg-yellow-100 text-yellow-800', icon: '⚠️' };
-    }
-    return { label: 'In Stock', color: 'bg-green-100 text-green-800', icon: '✓' };
-  };
-
-  const getCategoryIcon = (category) => {
-    return categories.find(c => c.value === category)?.icon || '📦';
-  };
-
-  // Excel Template Generator
-  const downloadExcelTemplate = () => {
-    const template = [
-      {
-        partNumber: 'OIL-5W30-001',
-        name: 'Engine Oil 5W-30',
-        description: '1 Liter synthetic engine oil',
-        category: 'FLUIDS',
-        brand: 'Castrol',
-        costPrice: 450,
-        sellingPrice: 650,
-        quantity: 50,
-        minStockLevel: 10,
-        location: 'Shelf A-1',
-        supplier: 'Auto Parts Supplier Ltd',
-      },
-      {
-        partNumber: 'FILTER-OIL-002',
-        name: 'Oil Filter',
-        description: 'Standard oil filter',
-        category: 'FILTERS',
-        brand: 'Bosch',
-        costPrice: 150,
-        sellingPrice: 250,
-        quantity: 100,
-        minStockLevel: 20,
-        location: 'Shelf B-2',
-        supplier: 'Bosch India',
-      },
-      {
-        partNumber: 'BRAKE-PAD-003',
-        name: 'Brake Pads Set',
-        description: 'Front brake pads - ceramic',
-        category: 'PARTS',
-        brand: 'Brembo',
-        costPrice: 800,
-        sellingPrice: 1200,
-        quantity: 30,
-        minStockLevel: 5,
-        location: 'Shelf C-3',
-        supplier: 'Brake Parts Co',
-      }
+  // ─── Excel handlers ───
+  const downloadTemplate = () => {
+    const tpl = [
+      { partNumber:'OIL-5W30-001', name:'Engine Oil 5W-30', description:'1L synthetic', category:'FLUIDS', brand:'Castrol', costPrice:450, sellingPrice:650, quantity:50, minStockLevel:10, location:'Shelf A-1', supplier:'Auto Parts Ltd' },
+      { partNumber:'FILTER-OIL-002', name:'Oil Filter', description:'Standard', category:'FILTERS', brand:'Bosch', costPrice:150, sellingPrice:250, quantity:100, minStockLevel:20, location:'Shelf B-2', supplier:'Bosch India' },
     ];
-
-    const worksheet = XLSX.utils.json_to_sheet(template);
-    const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, 'Parts Template');
-
-    worksheet['!cols'] = [
-      { wch: 20 },
-      { wch: 30 },
-      { wch: 40 },
-      { wch: 15 },
-      { wch: 15 },
-      { wch: 12 },
-      { wch: 12 },
-      { wch: 10 },
-      { wch: 15 },
-      { wch: 15 },
-      { wch: 25 },
-    ];
-
-    XLSX.writeFile(workbook, 'Inventory_Template.xlsx');
-    toast.success('Template downloaded successfully');
+    const ws = XLSX.utils.json_to_sheet(tpl);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Template');
+    ws['!cols'] = [{ wch:20 },{ wch:30 },{ wch:40 },{ wch:15 },{ wch:15 },{ wch:12 },{ wch:12 },{ wch:10 },{ wch:15 },{ wch:15 },{ wch:25 }];
+    XLSX.writeFile(wb, 'Inventory_Template.xlsx');
+    toast.success('Template downloaded');
   };
 
-  // Handle Excel file upload
   const handleFileUpload = (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-
-    if (!file.name.endsWith('.xlsx') && !file.name.endsWith('.xls')) {
-      toast.error('Please upload an Excel file (.xlsx or .xls)');
-      return;
-    }
-
-    setUploadFile(file);
-    setIsProcessing(true);
-    setUploadErrors([]);
-
+    const file = e.target.files[0]; if (!file) return;
+    if (!file.name.match(/\.xlsx?$/)) { toast.error('Upload .xlsx or .xls'); return; }
+    setUploadFile(file); setIsProcessing(true); setUploadErrors([]);
     const reader = new FileReader();
-    reader.onload = (event) => {
+    reader.onload = (ev) => {
       try {
-        const data = new Uint8Array(event.target.result);
-        const workbook = XLSX.read(data, { type: 'array' });
-        const sheetName = workbook.SheetNames[0];
-        const worksheet = workbook.Sheets[sheetName];
-        const jsonData = XLSX.utils.sheet_to_json(worksheet);
-
-        if (jsonData.length === 0) {
-          toast.error('Excel file is empty');
-          setIsProcessing(false);
-          return;
-        }
-
-        const validatedData = validateExcelData(jsonData);
-        setUploadPreview(validatedData.valid);
-        setUploadErrors(validatedData.errors);
-        setIsProcessing(false);
-
-        if (validatedData.valid.length > 0) {
-          toast.success(`${validatedData.valid.length} valid items found`);
-        }
-        if (validatedData.errors.length > 0) {
-          toast.error(`${validatedData.errors.length} items have errors`);
-        }
-      } catch (error) {
-        console.error('Error reading Excel file:', error);
-        toast.error('Error reading Excel file');
-        setIsProcessing(false);
-      }
+        const data = new Uint8Array(ev.target.result);
+        const wb = XLSX.read(data, { type: 'array' });
+        const json = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]);
+        if (!json.length) { toast.error('Empty file'); setIsProcessing(false); return; }
+        const cats = CATEGORIES.map(c => c.value);
+        const valid = [], errors = [];
+        json.forEach((row, i) => {
+          const errs = [];
+          if (!row.partNumber) errs.push('Part number required');
+          if (!row.name) errs.push('Name required');
+          if (!row.category) errs.push('Category required');
+          if (row.costPrice == null) errs.push('Cost price required');
+          if (row.sellingPrice == null) errs.push('Selling price required');
+          if (row.quantity == null) errs.push('Quantity required');
+          if (row.category && !cats.includes(String(row.category).toUpperCase())) errs.push('Invalid category');
+          if (errs.length) errors.push({ row: i + 2, data: row, errors: errs });
+          else valid.push({ ...row, partNumber: String(row.partNumber).trim().toUpperCase(), category: String(row.category).toUpperCase(), costPrice: Number(row.costPrice), sellingPrice: Number(row.sellingPrice), quantity: Number(row.quantity), minStockLevel: row.minStockLevel ? Number(row.minStockLevel) : 5 });
+        });
+        setUploadPreview(valid); setUploadErrors(errors); setIsProcessing(false);
+        if (valid.length) toast.success(`${valid.length} valid items`);
+        if (errors.length) toast.error(`${errors.length} errors`);
+      } catch { toast.error('Error reading file'); setIsProcessing(false); }
     };
     reader.readAsArrayBuffer(file);
   };
 
-  const validateExcelData = (data) => {
-    const valid = [];
-    const errors = [];
-    const categoryValues = ['PARTS', 'ACCESSORIES', 'FLUIDS', 'FILTERS', 'ELECTRICAL', 'BODY', 'TYRES', 'TOOLS', 'OTHER'];
-
-    data.forEach((row, index) => {
-      const rowErrors = [];
-
-      if (!row.partNumber) rowErrors.push('Part number is required');
-      if (!row.name) rowErrors.push('Name is required');
-      if (!row.category) rowErrors.push('Category is required');
-      if (row.costPrice === undefined || row.costPrice === null) rowErrors.push('Cost price is required');
-      if (row.sellingPrice === undefined || row.sellingPrice === null) rowErrors.push('Selling price is required');
-      if (row.quantity === undefined || row.quantity === null) rowErrors.push('Quantity is required');
-
-      if (row.costPrice && isNaN(Number(row.costPrice))) rowErrors.push('Cost price must be a number');
-      if (row.sellingPrice && isNaN(Number(row.sellingPrice))) rowErrors.push('Selling price must be a number');
-      if (row.quantity && isNaN(Number(row.quantity))) rowErrors.push('Quantity must be a number');
-      if (row.minStockLevel && isNaN(Number(row.minStockLevel))) rowErrors.push('Min stock level must be a number');
-
-      if (row.costPrice && Number(row.costPrice) < 0) rowErrors.push('Cost price cannot be negative');
-      if (row.sellingPrice && Number(row.sellingPrice) < 0) rowErrors.push('Selling price cannot be negative');
-      if (row.quantity && Number(row.quantity) < 0) rowErrors.push('Quantity cannot be negative');
-
-      if (row.category && !categoryValues.includes(row.category.toUpperCase())) {
-        rowErrors.push(`Invalid category. Must be one of: ${categoryValues.join(', ')}`);
-      }
-
-      if (rowErrors.length > 0) {
-        errors.push({
-          row: index + 2,
-          data: row,
-          errors: rowErrors
-        });
-      } else {
-        valid.push({
-          ...row,
-          partNumber: String(row.partNumber).trim().toUpperCase(),
-          category: row.category.toUpperCase(),
-          costPrice: Number(row.costPrice),
-          sellingPrice: Number(row.sellingPrice),
-          quantity: Number(row.quantity),
-          minStockLevel: row.minStockLevel ? Number(row.minStockLevel) : 5,
-        });
-      }
-    });
-
-    return { valid, errors };
-  };
-
   const handleBulkUpload = async () => {
-    if (uploadPreview.length === 0) {
-      toast.error('No valid items to upload');
-      return;
-    }
-
+    if (!uploadPreview.length) { toast.error('No valid items'); return; }
     setSubmitting(true);
     try {
-      const response = await fetch('/api/inventory/bulk-upload', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          parts: uploadPreview,
-          branchId: currentUser?.role === 'SUPER_ADMIN' ? null : currentUser?.branchId
-        }),
+      const r = await fetch('/api/inventory/bulk-upload', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ parts: uploadPreview, branchId: currentUser?.role === 'SUPER_ADMIN' ? null : currentUser?.branchId }),
       });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        toast.error(data.message || 'Failed to upload parts');
-        return;
-      }
-
-      toast.success(`Successfully uploaded ${data.imported} part(s)${data.failed > 0 ? `. ${data.failed} failed.` : ''}`);
-
-      setShowBulkUploadModal(false);
-      setUploadFile(null);
-      setUploadPreview([]);
-      setUploadErrors([]);
-      fetchParts();
-    } catch (error) {
-      console.error('Error uploading parts:', error);
-      toast.error('An error occurred during upload');
-    } finally {
-      setSubmitting(false);
-    }
+      const d = await r.json();
+      if (!r.ok) { toast.error(d.message || 'Failed'); return; }
+      toast.success(`Uploaded ${d.imported} part(s)`);
+      setShowBulkModal(false); setUploadFile(null); setUploadPreview([]); setUploadErrors([]); fetchParts();
+    } catch { toast.error('Upload error'); }
+    finally { setSubmitting(false); }
   };
 
-  const canManageInventory = ['SUPER_ADMIN', 'MANAGER'].includes(currentUser?.role);
+  const canManage = ['SUPER_ADMIN', 'MANAGER'].includes(currentUser?.role);
   const isEmployee = currentUser?.role === 'EMPLOYEE';
 
+  const STAT_CARDS = [
+    { label: 'Total Items', v: stats.totalItems, icon: '📦', grad: 'linear-gradient(135deg,#3b82f6,#1d4ed8)' },
+    isEmployee
+      ? { label: 'Available', v: stats.availableItems, icon: '✅', grad: 'linear-gradient(135deg,#10b981,#059669)' }
+      : { label: 'Inventory Value', v: `₹${stats.totalValue.toLocaleString('en-IN')}`, icon: '💰', grad: 'linear-gradient(135deg,#10b981,#059669)' },
+    { label: 'Low Stock', v: stats.lowStockCount, icon: '⚠️', grad: 'linear-gradient(135deg,#f59e0b,#d97706)' },
+    { label: 'Out of Stock', v: stats.outOfStockCount, icon: '❌', grad: 'linear-gradient(135deg,#ef4444,#dc2626)' },
+  ];
+
   return (
-    <div style={{
-      minHeight: '100vh',
-      background: '#f9fafb'
-    }}>
-      {/* Header */}
-      <div style={{
-        background: 'white',
-        borderBottom: '1px solid rgba(0,0,0,0.08)',
-        position: 'sticky',
-        top: 0,
-        zIndex: 10,
-        boxShadow: '0 1px 3px rgba(0,0,0,0.05)'
-      }}>
-        <div style={{
-          padding: isMobile ? '16px' : '16px 24px',
-          maxWidth: '1600px',
-          margin: '0 auto'
-        }}>
-          <div style={{
-            display: 'flex',
-            flexDirection: isMobile ? 'column' : 'row',
-            alignItems: isMobile ? 'flex-start' : 'center',
-            justifyContent: 'space-between',
-            gap: isMobile ? '16px' : '24px'
-          }}>
+    <>
+      <style dangerouslySetInnerHTML={{ __html: INV_CSS }} />
+
+      <div style={{ minHeight: '100vh' }}>
+        {/* ═══ HEADER ═══ */}
+        <div style={{ marginBottom: 24, animation: 'ivSlideUp .5s ease' }}>
+          <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', flexWrap: 'wrap', gap: 14 }}>
             <div>
-              <h1 style={{
-                fontSize: isMobile ? '24px' : 'clamp(24px, 4vw, 32px)',
-                fontWeight: '800',
-                color: '#1a202c',
-                margin: 0,
-                marginBottom: '4px'
-              }}>
-                📦 {isEmployee ? 'Parts & Inventory' : 'Inventory Management'}
-              </h1>
-              <p style={{
-                color: '#6b7280',
-                fontSize: isMobile ? '14px' : '16px',
-                margin: 0
-              }}>
-                {isEmployee ? 'View available parts and stock levels' : 'Manage parts, supplies, and stock levels'}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4 }}>
+                <span style={{ fontSize: 26 }}>📦</span>
+                <h1 style={{ margin: 0, fontSize: 'clamp(1.3rem,4vw,1.7rem)', fontWeight: 800, color: 'white', letterSpacing: '-.5px' }}>
+                  {isEmployee ? 'Parts & Inventory' : 'Inventory Management'}
+                </h1>
+              </div>
+              <p style={{ margin: 0, fontSize: 13, color: 'rgba(255,255,255,.4)', fontWeight: 500 }}>
+                {isEmployee ? 'View available parts and stock' : 'Manage parts, supplies, and stock'}
               </p>
             </div>
 
-            {canManageInventory && (
-              <div style={{
-                display: 'flex',
-                gap: isMobile ? '8px' : '12px',
-                width: isMobile ? '100%' : 'auto',
-                flexWrap: 'wrap'
-              }}>
-                <button
-                  onClick={downloadExcelTemplate}
-                  style={{
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    gap: '8px',
-                    background: 'white',
-                    border: '2px solid #10b981',
-                    color: '#10b981',
-                    padding: isMobile ? '10px 16px' : '12px 20px',
-                    borderRadius: '12px',
-                    fontWeight: '600',
-                    fontSize: isMobile ? '13px' : '14px',
-                    cursor: 'pointer',
-                    transition: 'all 0.2s',
-                    flex: isMobile ? '1' : 'none'
-                  }}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.background = '#10b981';
-                    e.currentTarget.style.color = 'white';
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.background = 'white';
-                    e.currentTarget.style.color = '#10b981';
-                  }}
-                >
-                  <svg style={{ width: '18px', height: '18px' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                  </svg>
-                  {isMobile ? '📥' : 'Template'}
-                </button>
-
-                <button
-                  onClick={() => setShowBulkUploadModal(true)}
-                  style={{
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    gap: '8px',
-                    background: 'linear-gradient(135deg, #8b5cf6 0%, #6d28d9 100%)',
-                    border: 'none',
-                    color: 'white',
-                    padding: isMobile ? '10px 16px' : '12px 20px',
-                    borderRadius: '12px',
-                    fontWeight: '600',
-                    fontSize: isMobile ? '13px' : '14px',
-                    cursor: 'pointer',
-                    boxShadow: '0 4px 12px rgba(139, 92, 246, 0.3)',
-                    transition: 'all 0.2s',
-                    flex: isMobile ? '1' : 'none'
-                  }}
-                  onMouseEnter={(e) => e.currentTarget.style.transform = 'translateY(-2px)'}
-                  onMouseLeave={(e) => e.currentTarget.style.transform = 'translateY(0)'}
-                >
-                  <svg style={{ width: '18px', height: '18px' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
-                  </svg>
-                  {isMobile ? '📤 Bulk' : 'Bulk Upload'}
-                </button>
-
-                <button
-                  onClick={openCreateModal}
-                  style={{
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    gap: '8px',
-                    background: 'linear-gradient(135deg, #14b8a6 0%, #0891b2 100%)',
-                    border: 'none',
-                    color: 'white',
-                    padding: isMobile ? '10px 16px' : '12px 20px',
-                    borderRadius: '12px',
-                    fontWeight: '600',
-                    fontSize: isMobile ? '13px' : '14px',
-                    cursor: 'pointer',
-                    boxShadow: '0 4px 12px rgba(20, 184, 166, 0.3)',
-                    transition: 'all 0.2s',
-                    flex: isMobile ? '1' : 'none'
-                  }}
-                  onMouseEnter={(e) => e.currentTarget.style.transform = 'translateY(-2px)'}
-                  onMouseLeave={(e) => e.currentTarget.style.transform = 'translateY(0)'}
-                >
-                  <svg style={{ width: '18px', height: '18px' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
-                  </svg>
-                  {isMobile ? '➕ Add' : 'Add Part'}
-                </button>
+            {canManage && (
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                <GlassBtn onClick={downloadTemplate} label={isMobile ? '📥' : '📥 Template'} outline color="#10b981" />
+                <GlassBtn onClick={() => setShowBulkModal(true)} label={isMobile ? '📤 Bulk' : '📤 Bulk Upload'} grad="linear-gradient(135deg,#8b5cf6,#6d28d9)" glow="rgba(139,92,246,.35)" />
+                <GlassBtn onClick={openCreate} label={isMobile ? '➕ Add' : '➕ Add Part'} grad="linear-gradient(135deg,#14b8a6,#0891b2)" glow="rgba(20,184,166,.35)" />
               </div>
             )}
           </div>
         </div>
-      </div>
 
-      <div style={{
-        padding: isMobile ? '16px' : '24px',
-        maxWidth: '1600px',
-        margin: '0 auto'
-      }}>
-        {/* Stats Cards - Role-based */}
+        {/* ═══ STATS ═══ */}
         <div style={{
           display: 'grid',
-          gridTemplateColumns: isMobile ? 'repeat(2, 1fr)' : 'repeat(auto-fit, minmax(250px, 1fr))',
-          gap: isMobile ? '12px' : '16px',
-          marginBottom: isMobile ? '20px' : '24px'
+          gridTemplateColumns: `repeat(auto-fit, minmax(min(100%, ${isMobile ? '140px' : '220px'}), 1fr))`,
+          gap: isMobile ? 10 : 14, marginBottom: 20,
         }}>
-          <StatsCard
-            title="Total Items"
-            value={stats.totalItems}
-            icon="📦"
-            gradient="linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%)"
-            isMobile={isMobile}
-          />
-          
-          {/* Show different stat based on role */}
-          {isEmployee ? (
-            <StatsCard
-              title="Available"
-              value={stats.availableItems}
-              icon="✅"
-              gradient="linear-gradient(135deg, #10b981 0%, #059669 100%)"
-              isMobile={isMobile}
-            />
-          ) : (
-            <StatsCard
-              title="Inventory Value"
-              value={`₹${stats.totalValue.toLocaleString('en-IN')}`}
-              icon="💰"
-              gradient="linear-gradient(135deg, #10b981 0%, #059669 100%)"
-              isMobile={isMobile}
-            />
-          )}
-          
-          <StatsCard
-            title="Low Stock"
-            value={stats.lowStockCount}
-            icon="⚠️"
-            gradient="linear-gradient(135deg, #f59e0b 0%, #d97706 100%)"
-            isMobile={isMobile}
-          />
-          <StatsCard
-            title="Out of Stock"
-            value={stats.outOfStockCount}
-            icon="❌"
-            gradient="linear-gradient(135deg, #ef4444 0%, #dc2626 100%)"
-            isMobile={isMobile}
-          />
+          {STAT_CARDS.map((s, i) => (
+            <div key={s.label} className="iv-glass iv-stat" style={{
+              padding: isMobile ? '14px' : 'clamp(14px,2vw,20px)',
+              animation: `ivSlideUp .5s ease ${i * .08}s backwards`,
+              cursor: 'default',
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                <div style={{ minWidth: 0 }}>
+                  <p style={{ margin: 0, fontSize: 9.5, fontWeight: 700, color: 'rgba(255,255,255,.38)', textTransform: 'uppercase', letterSpacing: '.7px' }}>{s.label}</p>
+                  <p style={{ margin: '5px 0 0', fontSize: isMobile ? '1.2rem' : 'clamp(1.2rem,2.5vw,1.6rem)', fontWeight: 800, color: 'white', letterSpacing: '-.5px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {typeof s.v === 'number' ? <AnimNum value={s.v} /> : s.v}
+                  </p>
+                </div>
+                <div className="iv-stat-icon" style={{
+                  width: isMobile ? 42 : 48, height: isMobile ? 42 : 48, borderRadius: 13,
+                  background: s.grad,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  fontSize: isMobile ? 20 : 22, flexShrink: 0,
+                  boxShadow: '0 6px 18px rgba(0,0,0,.25)',
+                  transition: 'transform .3s ease',
+                }}>{s.icon}</div>
+              </div>
+            </div>
+          ))}
         </div>
 
-        {/* Low Stock Alert */}
+        {/* ═══ LOW STOCK ALERT ═══ */}
         {stats.lowStockCount > 0 && (
           <div style={{
-            background: 'linear-gradient(135deg, #fef3c7 0%, #fde68a 100%)',
-            border: '2px solid #f59e0b',
-            borderRadius: isMobile ? '16px' : '20px',
-            padding: isMobile ? '16px' : '20px',
-            marginBottom: isMobile ? '20px' : '24px',
-            animation: 'pulse 2s ease-in-out infinite'
+            padding: isMobile ? 14 : 18, marginBottom: 20, borderRadius: 16,
+            background: 'rgba(245,158,11,.08)',
+            border: '1px solid rgba(245,158,11,.2)',
+            animation: 'ivSlideUp .5s ease .2s backwards',
           }}>
-            <div style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '12px',
-              flexWrap: 'wrap'
-            }}>
-              <span style={{ fontSize: isMobile ? '28px' : '32px' }}>⚠️</span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+              <span style={{ fontSize: isMobile ? 24 : 28, animation: 'ivPulse 2s ease infinite' }}>⚠️</span>
               <div style={{ flex: 1, minWidth: 0 }}>
-                <p style={{
-                  fontWeight: '700',
-                  color: '#92400e',
-                  margin: 0,
-                  marginBottom: '4px',
-                  fontSize: isMobile ? '15px' : '16px'
-                }}>
-                  Low Stock Alert
-                </p>
-                <p style={{
-                  fontSize: isMobile ? '13px' : '14px',
-                  color: '#b45309',
-                  margin: 0
-                }}>
-                  {stats.lowStockCount} item(s) are running low. {stats.outOfStockCount > 0 && `${stats.outOfStockCount} item(s) are out of stock.`}
+                <p style={{ margin: 0, fontWeight: 700, color: '#fcd34d', fontSize: isMobile ? 14 : 15 }}>Low Stock Alert</p>
+                <p style={{ margin: '2px 0 0', fontSize: 12, color: 'rgba(255,255,255,.45)' }}>
+                  {stats.lowStockCount} item(s) low. {stats.outOfStockCount > 0 && `${stats.outOfStockCount} out of stock.`}
                 </p>
               </div>
-              <button
-                onClick={() => setFilters(prev => ({ ...prev, lowStock: true }))}
-                style={{
-                  padding: isMobile ? '8px 16px' : '10px 20px',
-                  background: '#f59e0b',
-                  color: 'white',
-                  border: 'none',
-                  borderRadius: '10px',
-                  fontWeight: '600',
-                  fontSize: isMobile ? '13px' : '14px',
-                  cursor: 'pointer',
-                  transition: 'all 0.2s'
-                }}
-                onMouseEnter={(e) => e.currentTarget.style.background = '#d97706'}
-                onMouseLeave={(e) => e.currentTarget.style.background = '#f59e0b'}
-              >
-                View Items
-              </button>
+              <button onClick={() => setFilters(p => ({ ...p, lowStock: true }))} className="iv-btn" style={{
+                padding: '8px 16px', borderRadius: 10,
+                background: 'rgba(245,158,11,.2)', border: '1px solid rgba(245,158,11,.3)',
+                color: '#fcd34d', fontSize: 12, fontWeight: 700,
+              }}>View Items</button>
             </div>
           </div>
         )}
 
-        {/* Filters */}
-        <div style={{
-          background: 'white',
-          borderRadius: isMobile ? '16px' : '20px',
-          boxShadow: '0 1px 3px rgba(0,0,0,0.05)',
-          border: '1px solid rgba(0,0,0,0.05)',
-          padding: isMobile ? '16px' : '20px',
-          marginBottom: isMobile ? '20px' : '24px'
+        {/* ═══ FILTERS ═══ */}
+        <div className="iv-glass" style={{
+          padding: isMobile ? 14 : 18, marginBottom: 20,
+          animation: 'ivSlideUp .5s ease .25s backwards',
         }}>
-          <div style={{
-            display: 'flex',
-            flexDirection: isMobile ? 'column' : 'row',
-            gap: '12px'
-          }}>
-            {/* Search */}
-            <div style={{ flex: 1 }}>
-              <div style={{ position: 'relative' }}>
-                <svg style={{
-                  position: 'absolute',
-                  left: '12px',
-                  top: '50%',
-                  transform: 'translateY(-50%)',
-                  width: '18px',
-                  height: '18px',
-                  color: '#9ca3af'
-                }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                </svg>
-                <input
-                  type="text"
-                  name="search"
-                  value={filters.search}
-                  onChange={handleFilterChange}
-                  placeholder="Search by part number, name, or brand..."
-                  style={{
-                    width: '100%',
-                    paddingLeft: '40px',
-                    paddingRight: '16px',
-                    paddingTop: '10px',
-                    paddingBottom: '10px',
-                    border: '2px solid #e5e7eb',
-                    borderRadius: '12px',
-                    fontSize: isMobile ? '14px' : '15px',
-                    transition: 'all 0.2s',
-                    outline: 'none'
-                  }}
-                  onFocus={(e) => e.target.style.borderColor = '#14b8a6'}
-                  onBlur={(e) => e.target.style.borderColor = '#e5e7eb'}
-                />
-              </div>
+          <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: 10 }}>
+            {/* search */}
+            <div style={{ flex: 1, position: 'relative' }}>
+              <svg style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', width: 16, height: 16, color: 'rgba(255,255,255,.3)', pointerEvents: 'none' }}
+                fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+              </svg>
+              <input className="iv-search" name="search" value={filters.search} onChange={handleFilterChange}
+                placeholder="Search parts..." />
             </div>
 
-            {/* Category Filter */}
-            <select
-              name="category"
-              value={filters.category}
-              onChange={handleFilterChange}
-              style={{
-                padding: '10px 16px',
-                border: '2px solid #e5e7eb',
-                borderRadius: '12px',
-                background: 'white',
-                fontSize: isMobile ? '14px' : '15px',
-                minWidth: isMobile ? '100%' : '150px',
-                cursor: 'pointer',
-                outline: 'none'
-              }}
-              onFocus={(e) => e.target.style.borderColor = '#14b8a6'}
-              onBlur={(e) => e.target.style.borderColor = '#e5e7eb'}
-            >
+            {/* category */}
+            <select className="iv-select" name="category" value={filters.category} onChange={handleFilterChange}
+              style={{ minWidth: isMobile ? '100%' : 150 }}>
               <option value="">All Categories</option>
-              {categories.map(cat => (
-                <option key={cat.value} value={cat.value}>
-                  {cat.icon} {cat.label}
-                </option>
-              ))}
+              {CATEGORIES.map(c => <option key={c.value} value={c.value}>{c.icon} {c.label}</option>)}
             </select>
 
-            {/* Low Stock Filter */}
+            {/* low stock toggle */}
             <label style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '8px',
-              padding: '10px 16px',
-              border: '2px solid #e5e7eb',
-              borderRadius: '12px',
-              cursor: 'pointer',
-              background: filters.lowStock ? '#fef3c7' : 'white',
-              borderColor: filters.lowStock ? '#f59e0b' : '#e5e7eb',
-              transition: 'all 0.2s'
+              display: 'flex', alignItems: 'center', gap: 8,
+              padding: '10px 14px', borderRadius: 12, cursor: 'pointer',
+              background: filters.lowStock ? 'rgba(245,158,11,.12)' : 'rgba(255,255,255,.03)',
+              border: `1px solid ${filters.lowStock ? 'rgba(245,158,11,.3)' : 'rgba(255,255,255,.07)'}`,
+              transition: 'all .22s',
             }}>
-              <input
-                type="checkbox"
-                name="lowStock"
-                checked={filters.lowStock}
-                onChange={handleFilterChange}
-                style={{
-                  width: '16px',
-                  height: '16px',
-                  cursor: 'pointer',
-                  accentColor: '#f59e0b'
-                }}
-              />
-              <span style={{
-                fontSize: isMobile ? '14px' : '15px',
-                fontWeight: '500',
-                color: filters.lowStock ? '#b45309' : '#374151',
-                whiteSpace: 'nowrap'
-              }}>
-                Low Stock Only
+              <input type="checkbox" name="lowStock" checked={filters.lowStock} onChange={handleFilterChange}
+                style={{ width: 15, height: 15, accentColor: '#f59e0b', cursor: 'pointer' }} />
+              <span style={{ fontSize: 13, fontWeight: 600, color: filters.lowStock ? '#fcd34d' : 'rgba(255,255,255,.5)', whiteSpace: 'nowrap' }}>
+                Low Stock
               </span>
             </label>
 
-            {/* Clear Filters */}
+            {/* clear */}
             {(filters.search || filters.category || filters.lowStock) && (
-              <button
-                onClick={resetFilters}
-                style={{
-                  padding: '10px 16px',
-                  border: '2px solid #e5e7eb',
-                  borderRadius: '12px',
-                  background: 'white',
-                  color: '#6b7280',
-                  fontSize: isMobile ? '14px' : '15px',
-                  fontWeight: '500',
-                  cursor: 'pointer',
-                  transition: 'all 0.2s',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '8px',
-                  whiteSpace: 'nowrap'
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.background = '#f3f4f6';
-                  e.currentTarget.style.color = '#374151';
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.background = 'white';
-                  e.currentTarget.style.color = '#6b7280';
-                }}
-              >
-                <svg style={{ width: '16px', height: '16px' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <button onClick={() => setFilters({ search: '', category: '', lowStock: false })} className="iv-btn" style={{
+                padding: '10px 14px', borderRadius: 12,
+                background: 'rgba(255,255,255,.04)',
+                border: '1px solid rgba(255,255,255,.08)',
+                color: 'rgba(255,255,255,.5)', fontSize: 13, fontWeight: 600,
+                display: 'flex', alignItems: 'center', gap: 6,
+              }}>
+                <svg style={{ width: 14, height: 14 }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                 </svg>
                 Clear
@@ -953,2256 +536,705 @@ export default function InventoryPage() {
           </div>
         </div>
 
-        {/* Parts List */}
+        {/* ═══ CONTENT ═══ */}
         {loading ? (
-          <div style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            padding: '80px 20px',
-            background: 'white',
-            borderRadius: '20px'
-          }}>
+          <div style={{ display: 'flex', justifyContent: 'center', padding: '80px 20px' }}>
             <div style={{ textAlign: 'center' }}>
-              <div style={{
-                width: isMobile ? '48px' : '64px',
-                height: isMobile ? '48px' : '64px',
-                border: '4px solid #e0f2fe',
-                borderTopColor: '#14b8a6',
-                borderRadius: '50%',
-                animation: 'spin 1s linear infinite',
-                margin: '0 auto 16px'
-              }} />
-              <p style={{
-                color: '#6b7280',
-                fontSize: isMobile ? '14px' : '16px',
-                fontWeight: '500',
-                margin: 0
-              }}>
-                Loading inventory...
-              </p>
+              <div style={{ width: 44, height: 44, margin: '0 auto 14px', border: '3px solid rgba(255,255,255,.1)', borderTopColor: '#14b8a6', borderRadius: '50%', animation: 'ivSpin .8s linear infinite' }} />
+              <p style={{ color: 'rgba(255,255,255,.4)', fontSize: 14, fontWeight: 500 }}>Loading inventory...</p>
             </div>
           </div>
         ) : parts.length === 0 ? (
-          <EmptyState
-            filters={filters}
-            canManageInventory={canManageInventory}
-            openCreateModal={openCreateModal}
-            isMobile={isMobile}
-          />
-        ) : (
-          <>
-            {/* Desktop Table */}
-            {!isMobile && (
-              <DesktopPartsTable
-                parts={parts}
-                getCategoryIcon={getCategoryIcon}
-                getStockStatus={getStockStatus}
-                canManageInventory={canManageInventory}
-                openAdjustModal={openAdjustModal}
-                openDetailModal={openDetailModal}
-                openEditModal={openEditModal}
-                handleDelete={handleDelete}
-                isEmployee={isEmployee}
-              />
+          <div className="iv-glass" style={{ padding: '60px 24px', textAlign: 'center', animation: 'ivScaleIn .5s ease' }}>
+            <div style={{ width: 72, height: 72, borderRadius: 22, background: 'rgba(20,184,166,.12)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 20px', fontSize: 32, animation: 'ivFloat 3s ease-in-out infinite' }}>📦</div>
+            <h3 style={{ margin: '0 0 8px', fontSize: 18, fontWeight: 700, color: 'white' }}>No parts found</h3>
+            <p style={{ margin: '0 0 24px', fontSize: 14, color: 'rgba(255,255,255,.4)' }}>
+              {(filters.search || filters.category || filters.lowStock) ? 'Try different filters' : 'Add your first part'}
+            </p>
+            {canManage && !(filters.search || filters.category || filters.lowStock) && (
+              <GlassBtn onClick={openCreate} label="Add First Part" grad="linear-gradient(135deg,#14b8a6,#0891b2)" glow="rgba(20,184,166,.35)" />
             )}
+          </div>
+        ) : isMobile ? (
+          /* MOBILE CARDS */
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            {parts.map((part, i) => {
+              const ss = stockStatus(part);
+              return (
+                <div key={part.id} className="iv-glass" onClick={() => openDetail(part)} style={{
+                  padding: 16, cursor: 'pointer',
+                  animation: `ivSlideUp .4s ease ${i * .03}s backwards`,
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 12 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10, flex: 1, minWidth: 0 }}>
+                      <div style={{ width: 44, height: 44, borderRadius: 13, background: 'rgba(255,255,255,.06)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22, flexShrink: 0 }}>
+                        {catIcon(part.category)}
+                      </div>
+                      <div style={{ minWidth: 0 }}>
+                        <p style={{ margin: 0, fontWeight: 700, color: 'white', fontSize: 14, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{part.name}</p>
+                        <p style={{ margin: '1px 0 0', fontSize: 11, color: 'rgba(255,255,255,.35)', fontFamily: 'monospace' }}>{part.partNumber}</p>
+                      </div>
+                    </div>
+                    <span style={{ padding: '3px 9px', borderRadius: 14, background: ss.bg, border: `1px solid ${ss.border}`, color: ss.color, fontSize: 10, fontWeight: 700, flexShrink: 0 }}>
+                      {ss.icon} {ss.label}
+                    </span>
+                  </div>
 
-            {/* Mobile Cards */}
-            {isMobile && (
-              <MobilePartsCards
-                parts={parts}
-                getCategoryIcon={getCategoryIcon}
-                getStockStatus={getStockStatus}
-                canManageInventory={canManageInventory}
-                openAdjustModal={openAdjustModal}
-                openDetailModal={openDetailModal}
-                isEmployee={isEmployee}
-              />
-            )}
-          </>
+                  <div style={{ display: 'grid', gridTemplateColumns: isEmployee ? '1fr 1fr' : '1fr 1fr 1fr', gap: 8, marginBottom: 12 }}>
+                    <MiniStat label="Stock" value={part.quantity} color={part.quantity === 0 ? '#fca5a5' : part.quantity <= part.minStockLevel ? '#fcd34d' : 'white'} />
+                    {!isEmployee && <MiniStat label="Price" value={`₹${part.sellingPrice.toLocaleString('en-IN')}`} color="#6ee7b7" />}
+                    <MiniStat label="Used" value={part._count?.jobs || 0} color="#93c5fd" />
+                  </div>
+
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingTop: 12, borderTop: '1px solid rgba(255,255,255,.05)' }}>
+                    <span style={{ fontSize: 11, color: 'rgba(255,255,255,.35)' }}>
+                      {isEmployee ? `📍 ${part.location || '—'}` : `${catIcon(part.category)} ${part.category}`}
+                    </span>
+                    <div style={{ display: 'flex', gap: 6 }}>
+                      {canManage && (
+                        <button onClick={(e) => { e.stopPropagation(); openAdjust(part); }} className="iv-btn" style={{
+                          padding: '6px 12px', borderRadius: 8,
+                          background: 'rgba(20,184,166,.12)', border: '1px solid rgba(20,184,166,.2)',
+                          color: '#5eead4', fontSize: 12, fontWeight: 700,
+                        }}>Adjust</button>
+                      )}
+                      <span style={{ color: '#93c5fd', fontWeight: 600, fontSize: 12 }}>Details →</span>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+          /* DESKTOP TABLE */
+          <div className="iv-glass" style={{ overflow: 'hidden', animation: 'ivSlideUp .5s ease .3s backwards' }}>
+            <div style={{ overflowX: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 850 }}>
+                <thead>
+                  <tr>
+                    {['Part', 'Category', 'Stock', ...(!isEmployee ? ['Price'] : []), 'Status', isEmployee ? 'Location' : 'Branch', 'Actions'].map(h => (
+                      <th key={h} style={{
+                        padding: '13px 18px', textAlign: h === 'Actions' ? 'right' : 'left',
+                        fontSize: 10, fontWeight: 800, color: 'rgba(255,255,255,.3)',
+                        textTransform: 'uppercase', letterSpacing: '.8px',
+                        borderBottom: '1px solid rgba(255,255,255,.06)',
+                      }}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {parts.map((part, i) => {
+                    const ss = stockStatus(part);
+                    return (
+                      <tr key={part.id} className="iv-row" onClick={() => openDetail(part)} style={{
+                        cursor: 'pointer',
+                        borderBottom: i < parts.length - 1 ? '1px solid rgba(255,255,255,.04)' : 'none',
+                        animation: `ivSlideUp .35s ease ${i * .03}s backwards`,
+                      }}>
+                        <td style={{ padding: '13px 18px' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                            <div style={{ width: 40, height: 40, borderRadius: 11, background: 'rgba(255,255,255,.05)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, flexShrink: 0 }}>
+                              {catIcon(part.category)}
+                            </div>
+                            <div>
+                              <p style={{ margin: 0, fontWeight: 700, color: 'white', fontSize: 14 }}>{part.name}</p>
+                              <p style={{ margin: '1px 0 0', fontSize: 11, color: 'rgba(255,255,255,.35)', fontFamily: 'monospace' }}>{part.partNumber}</p>
+                            </div>
+                          </div>
+                        </td>
+                        <td style={{ padding: '13px 18px' }}>
+                          <span style={{ padding: '4px 10px', borderRadius: 8, background: 'rgba(255,255,255,.05)', border: '1px solid rgba(255,255,255,.07)', fontSize: 12, fontWeight: 600, color: 'rgba(255,255,255,.5)' }}>
+                            {catIcon(part.category)} {part.category}
+                          </span>
+                        </td>
+                        <td style={{ padding: '13px 18px' }}>
+                          <p style={{ margin: 0, fontWeight: 800, fontSize: 16, color: part.quantity === 0 ? '#fca5a5' : part.quantity <= part.minStockLevel ? '#fcd34d' : 'white' }}>{part.quantity}</p>
+                          <p style={{ margin: '1px 0 0', fontSize: 10, color: 'rgba(255,255,255,.3)' }}>Min: {part.minStockLevel}</p>
+                        </td>
+                        {!isEmployee && (
+                          <td style={{ padding: '13px 18px' }}>
+                            <p style={{ margin: 0, fontWeight: 700, fontSize: 14, color: '#6ee7b7' }}>₹{part.sellingPrice.toLocaleString('en-IN')}</p>
+                            <p style={{ margin: '1px 0 0', fontSize: 10, color: 'rgba(255,255,255,.3)' }}>Cost: ₹{part.costPrice.toLocaleString('en-IN')}</p>
+                          </td>
+                        )}
+                        <td style={{ padding: '13px 18px' }}>
+                          <span style={{ padding: '4px 10px', borderRadius: 14, background: ss.bg, border: `1px solid ${ss.border}`, color: ss.color, fontSize: 11, fontWeight: 700 }}>
+                            {ss.icon} {ss.label}
+                          </span>
+                        </td>
+                        <td style={{ padding: '13px 18px', fontSize: 13, color: 'rgba(255,255,255,.45)' }}>
+                          {isEmployee ? (part.location || '—') : (part.branch?.name || '—')}
+                        </td>
+                        <td style={{ padding: '13px 18px' }}>
+                          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 4 }}>
+                            {canManage && <TblBtn onClick={(e) => { e.stopPropagation(); openAdjust(part); }} icon="➕" tip="Adjust" hc="#14b8a6" />}
+                            <TblBtn onClick={(e) => { e.stopPropagation(); openDetail(part); }} icon="👁️" tip="View" hc="#3b82f6" />
+                            {canManage && (
+                              <>
+                                <TblBtn onClick={(e) => { e.stopPropagation(); openEdit(part); }} icon="✏️" tip="Edit" hc="#10b981" />
+                                <TblBtn onClick={(e) => { e.stopPropagation(); setShowDeleteConfirm(part); }} icon="🗑️" tip="Delete" hc="#ef4444" />
+                              </>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
         )}
       </div>
 
-      {/* ========== ALL MODALS ========== */}
-      
-      {/* Add/Edit Part Modal */}
-      <AddEditPartModal
-        showModal={showModal}
-        setShowModal={setShowModal}
-        editingPart={editingPart}
-        formData={formData}
-        handleChange={handleChange}
-        handleSubmit={handleSubmit}
-        submitting={submitting}
-        categories={categories}
-        branches={branches}
-        currentUser={currentUser}
-        isMobile={isMobile}
-      />
+      {/* ═══ MODALS ═══ */}
 
-      {/* Adjust Stock Modal */}
-      <StockAdjustModal
-        showAdjustModal={showAdjustModal}
-        setShowAdjustModal={setShowAdjustModal}
-        selectedPart={selectedPart}
-        adjustmentData={adjustmentData}
-        setAdjustmentData={setAdjustmentData}
-        handleAdjustStock={handleAdjustStock}
-        submitting={submitting}
-        isMobile={isMobile}
-      />
+      {/* Add/Edit */}
+      {showModal && (
+        <Overlay onClose={() => setShowModal(false)}>
+          <div style={{ maxWidth: 620, width: '100%' }}>
+            <ModalHeader grad="linear-gradient(135deg,#14b8a6,#0891b2)"
+              title={editingPart ? '✏️ Edit Part' : '➕ Add New Part'}
+              sub={editingPart ? `Editing ${editingPart.name}` : 'Add to inventory'}
+              onClose={() => setShowModal(false)} />
 
-      {/* Part Detail Modal */}
-      <PartDetailModal
-        showDetailModal={showDetailModal}
-        setShowDetailModal={setShowDetailModal}
-        selectedPart={selectedPart}
-        getCategoryIcon={getCategoryIcon}
-        canManageInventory={canManageInventory}
-        openAdjustModal={openAdjustModal}
-        openEditModal={openEditModal}
-        isMobile={isMobile}
-        isEmployee={isEmployee}
-      />
-
-      {/* Bulk Upload Modal */}
-      {showBulkUploadModal && (
-        <BulkUploadModal
-          isMobile={isMobile}
-          isProcessing={isProcessing}
-          submitting={submitting}
-          uploadFile={uploadFile}
-          uploadPreview={uploadPreview}
-          uploadErrors={uploadErrors}
-          handleFileUpload={handleFileUpload}
-          handleBulkUpload={handleBulkUpload}
-          onClose={() => {
-            if (!isProcessing && !submitting) {
-              setShowBulkUploadModal(false);
-              setUploadFile(null);
-              setUploadPreview([]);
-              setUploadErrors([]);
-            }
-          }}
-        />
-      )}
-
-      <style jsx global>{`
-        @keyframes spin {
-          from { transform: rotate(0deg); }
-          to { transform: rotate(360deg); }
-        }
-
-        @keyframes pulse {
-          0%, 100% { opacity: 1; }
-          50% { opacity: 0.8; }
-        }
-
-        @keyframes slideUp {
-          from {
-            opacity: 0;
-            transform: translateY(20px);
-          }
-          to {
-            opacity: 1;
-            transform: translateY(0);
-          }
-        }
-
-        * {
-          box-sizing: border-box;
-        }
-
-        input[type="number"]::-webkit-inner-spin-button,
-        input[type="number"]::-webkit-outer-spin-button {
-          -webkit-appearance: none;
-          margin: 0;
-        }
-
-        input[type="number"] {
-          -moz-appearance: textfield;
-        }
-      `}</style>
-    </div>
-  );
-}
-
-// Helper Components
-function StatsCard({ title, value, icon, gradient, isMobile }) {
-  const [isHovered, setIsHovered] = useState(false);
-
-  return (
-    <div
-      onMouseEnter={() => setIsHovered(true)}
-      onMouseLeave={() => setIsHovered(false)}
-      style={{
-        background: 'white',
-        borderRadius: isMobile ? '16px' : '20px',
-        padding: isMobile ? '16px' : '20px',
-        boxShadow: isHovered ? '0 8px 24px rgba(0,0,0,0.1)' : '0 1px 3px rgba(0,0,0,0.05)',
-        border: '1px solid rgba(0,0,0,0.05)',
-        transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
-        transform: isHovered && !isMobile ? 'translateY(-4px)' : 'translateY(0)',
-        cursor: 'pointer'
-      }}
-    >
-      <div style={{
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        gap: '12px'
-      }}>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <p style={{
-            fontSize: isMobile ? '11px' : '13px',
-            color: '#6b7280',
-            fontWeight: '600',
-            margin: 0,
-            marginBottom: '8px',
-            textTransform: 'uppercase',
-            letterSpacing: '0.5px'
-          }}>
-            {title}
-          </p>
-          <p style={{
-            fontSize: isMobile ? '22px' : '28px',
-            fontWeight: '800',
-            color: '#1a202c',
-            margin: 0,
-            letterSpacing: '-0.5px',
-            overflow: 'hidden',
-            textOverflow: 'ellipsis',
-            whiteSpace: 'nowrap'
-          }}>
-            {value}
-          </p>
-        </div>
-        <div style={{
-          width: isMobile ? '48px' : '56px',
-          height: isMobile ? '48px' : '56px',
-          background: gradient,
-          borderRadius: isMobile ? '14px' : '16px',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          fontSize: isMobile ? '24px' : '28px',
-          transition: 'all 0.3s ease',
-          transform: isHovered ? 'scale(1.1) rotate(5deg)' : 'scale(1) rotate(0deg)',
-          boxShadow: '0 4px 12px rgba(0,0,0,0.1)',
-          flexShrink: 0
-        }}>
-          {icon}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function EmptyState({ filters, canManageInventory, openCreateModal, isMobile }) {
-  return (
-    <div style={{
-      background: 'white',
-      borderRadius: isMobile ? '16px' : '20px',
-      boxShadow: '0 1px 3px rgba(0,0,0,0.05)',
-      border: '1px solid rgba(0,0,0,0.05)',
-      padding: isMobile ? '40px 20px' : '60px 40px',
-      textAlign: 'center'
-    }}>
-      <div style={{
-        width: isMobile ? '64px' : '80px',
-        height: isMobile ? '64px' : '80px',
-        background: '#f3f4f6',
-        borderRadius: '20px',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        margin: '0 auto 20px',
-        fontSize: isMobile ? '32px' : '40px'
-      }}>
-        📦
-      </div>
-      <h3 style={{
-        fontSize: isMobile ? '18px' : '20px',
-        fontWeight: '700',
-        color: '#1a202c',
-        margin: 0,
-        marginBottom: '8px'
-      }}>
-        No parts found
-      </h3>
-      <p style={{
-        fontSize: isMobile ? '14px' : '16px',
-        color: '#6b7280',
-        margin: 0,
-        marginBottom: '24px'
-      }}>
-        {filters.search || filters.category || filters.lowStock
-          ? 'Try adjusting your filters to find parts.'
-          : 'Add your first part to the inventory.'}
-      </p>
-      {canManageInventory && !filters.search && !filters.category && !filters.lowStock && (
-        <button
-          onClick={openCreateModal}
-          style={{
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: '8px',
-            background: 'linear-gradient(135deg, #14b8a6 0%, #0891b2 100%)',
-            color: 'white',
-            padding: isMobile ? '12px 24px' : '14px 28px',
-            borderRadius: '12px',
-            border: 'none',
-            fontWeight: '600',
-            fontSize: isMobile ? '14px' : '16px',
-            cursor: 'pointer',
-            boxShadow: '0 4px 12px rgba(20, 184, 166, 0.3)',
-            transition: 'all 0.2s'
-          }}
-          onMouseEnter={(e) => e.currentTarget.style.transform = 'translateY(-2px)'}
-          onMouseLeave={(e) => e.currentTarget.style.transform = 'translateY(0)'}
-        >
-          <svg style={{ width: '20px', height: '20px' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
-          </svg>
-          Add First Part
-        </button>
-      )}
-    </div>
-  );
-}
-
-function DesktopPartsTable({ 
-  parts, 
-  getCategoryIcon, 
-  getStockStatus, 
-  canManageInventory,
-  openAdjustModal,
-  openDetailModal,
-  openEditModal,
-  handleDelete,
-  isEmployee
-}) {
-  return (
-    <div style={{
-      background: 'white',
-      borderRadius: '20px',
-      boxShadow: '0 1px 3px rgba(0,0,0,0.05)',
-      border: '1px solid rgba(0,0,0,0.05)',
-      overflow: 'hidden'
-    }}>
-      <div style={{ overflowX: 'auto' }}>
-        <table style={{
-          width: '100%',
-          borderCollapse: 'collapse',
-          minWidth: '900px'
-        }}>
-          <thead>
-            <tr style={{
-              background: 'linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%)',
-              borderBottom: '2px solid #e2e8f0'
+            <form onSubmit={handleSubmit} style={{
+              padding: isMobile ? 20 : 24,
+              background: 'rgba(15,23,42,.97)',
+              borderRadius: '0 0 20px 20px',
+              border: '1px solid rgba(255,255,255,.06)', borderTop: 'none',
             }}>
-              <th style={{
-                padding: '16px 20px',
-                textAlign: 'left',
-                fontSize: '12px',
-                fontWeight: '700',
-                color: '#64748b',
-                textTransform: 'uppercase',
-                letterSpacing: '0.5px'
-              }}>Part</th>
-              <th style={{
-                padding: '16px 20px',
-                textAlign: 'left',
-                fontSize: '12px',
-                fontWeight: '700',
-                color: '#64748b',
-                textTransform: 'uppercase',
-                letterSpacing: '0.5px'
-              }}>Category</th>
-              <th style={{
-                padding: '16px 20px',
-                textAlign: 'left',
-                fontSize: '12px',
-                fontWeight: '700',
-                color: '#64748b',
-                textTransform: 'uppercase',
-                letterSpacing: '0.5px'
-              }}>Stock</th>
-              {!isEmployee && (
-                <th style={{
-                  padding: '16px 20px',
-                  textAlign: 'left',
-                  fontSize: '12px',
-                  fontWeight: '700',
-                  color: '#64748b',
-                  textTransform: 'uppercase',
-                  letterSpacing: '0.5px'
-                }}>Price</th>
+              <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 14, maxHeight: 'calc(80vh - 220px)', overflowY: 'auto', paddingRight: 4 }}>
+                <FInput label="Part Number" name="partNumber" value={formData.partNumber} onChange={handleChange} placeholder="OIL-5W30-001" required disabled={!!editingPart} style={{ textTransform: 'uppercase' }} />
+                <FInput label="Part Name" name="name" value={formData.name} onChange={handleChange} placeholder="Engine Oil 5W-30" required />
+
+                <div>
+                  <label className="iv-label">Category <span style={{ color: '#14b8a6' }}>*</span></label>
+                  <select className="iv-select" name="category" value={formData.category} onChange={handleChange} required>
+                    {CATEGORIES.map(c => <option key={c.value} value={c.value}>{c.icon} {c.label}</option>)}
+                  </select>
+                </div>
+                <FInput label="Brand" name="brand" value={formData.brand} onChange={handleChange} placeholder="Castrol" />
+                <FInput label="Cost Price (₹)" name="costPrice" type="number" value={formData.costPrice} onChange={handleChange} placeholder="0" required min="0" step="0.01" />
+                <FInput label="Selling Price (₹)" name="sellingPrice" type="number" value={formData.sellingPrice} onChange={handleChange} placeholder="0" required min="0" step="0.01" />
+                <FInput label="Quantity" name="quantity" type="number" value={formData.quantity} onChange={handleChange} placeholder="0" required min="0" />
+                <FInput label="Min Stock Level" name="minStockLevel" type="number" value={formData.minStockLevel} onChange={handleChange} placeholder="5" min="0" />
+                <FInput label="Location" name="location" value={formData.location} onChange={handleChange} placeholder="Shelf A-1" />
+                <FInput label="Supplier" name="supplier" value={formData.supplier} onChange={handleChange} placeholder="Supplier name" />
+
+                <div style={{ gridColumn: isMobile ? 'auto' : 'span 2' }}>
+                  <label className="iv-label">Description</label>
+                  <textarea className="iv-input" name="description" value={formData.description} onChange={handleChange} rows={2} placeholder="Part description..." style={{ resize: 'none' }} />
+                </div>
+
+                {currentUser?.role === 'SUPER_ADMIN' && branches.length > 0 && !editingPart && (
+                  <div style={{ gridColumn: isMobile ? 'auto' : 'span 2' }}>
+                    <label className="iv-label">Branch</label>
+                    <select className="iv-select" name="branchId" value={formData.branchId} onChange={handleChange}>
+                      <option value="">Select Branch</option>
+                      {branches.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
+                    </select>
+                  </div>
+                )}
+
+                {formData.costPrice && formData.sellingPrice && (
+                  <div style={{
+                    gridColumn: isMobile ? 'auto' : 'span 2',
+                    padding: 14, borderRadius: 12,
+                    background: 'rgba(16,185,129,.08)',
+                    border: '1px solid rgba(16,185,129,.2)',
+                  }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <span style={{ fontWeight: 700, color: '#6ee7b7', fontSize: 13 }}>💰 Profit Margin</span>
+                      <span style={{ fontWeight: 800, fontSize: 16, color: '#6ee7b7' }}>
+                        ₹{(Number(formData.sellingPrice) - Number(formData.costPrice)).toFixed(2)}
+                        <span style={{ fontSize: 12, fontWeight: 500, marginLeft: 6, color: 'rgba(255,255,255,.4)' }}>
+                          ({Number(formData.costPrice) > 0 ? (((Number(formData.sellingPrice) - Number(formData.costPrice)) / Number(formData.costPrice)) * 100).toFixed(1) : 0}%)
+                        </span>
+                      </span>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <ModalFooter onCancel={() => setShowModal(false)} submitting={submitting}
+                submitLabel={editingPart ? 'Update Part' : 'Add Part'}
+                grad="linear-gradient(135deg,#14b8a6,#0891b2)"
+                glow="rgba(20,184,166,.3)" />
+            </form>
+          </div>
+        </Overlay>
+      )}
+
+      {/* Stock Adjust */}
+      {showAdjustModal && selectedPart && (
+        <Overlay onClose={() => setShowAdjustModal(false)}>
+          <div style={{ maxWidth: 460, width: '100%' }}>
+            <ModalHeader grad="linear-gradient(135deg,#14b8a6,#0891b2)"
+              title="📦 Adjust Stock"
+              sub={`${selectedPart.name} • Current: ${selectedPart.quantity}`}
+              onClose={() => setShowAdjustModal(false)} />
+
+            <form onSubmit={handleAdjust} style={{
+              padding: isMobile ? 20 : 24,
+              background: 'rgba(15,23,42,.97)',
+              borderRadius: '0 0 20px 20px',
+              border: '1px solid rgba(255,255,255,.06)', borderTop: 'none',
+            }}>
+              {/* type toggle */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 18 }}>
+                {[
+                  { val: 'add', icon: '➕', label: 'Add Stock', c: '#10b981' },
+                  { val: 'subtract', icon: '➖', label: 'Remove', c: '#ef4444' },
+                ].map(t => (
+                  <label key={t.val} style={{
+                    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+                    padding: 14, borderRadius: 12, cursor: 'pointer',
+                    background: adjData.type === t.val ? `${t.c}15` : 'rgba(255,255,255,.03)',
+                    border: `1.5px solid ${adjData.type === t.val ? `${t.c}40` : 'rgba(255,255,255,.07)'}`,
+                    transition: 'all .22s',
+                  }}>
+                    <input type="radio" value={t.val} checked={adjData.type === t.val}
+                      onChange={(e) => setAdjData(p => ({ ...p, type: e.target.value }))} style={{ display: 'none' }} />
+                    <span style={{ fontSize: 18 }}>{t.icon}</span>
+                    <span style={{ fontWeight: 700, fontSize: 13, color: adjData.type === t.val ? t.c : 'rgba(255,255,255,.5)' }}>{t.label}</span>
+                  </label>
+                ))}
+              </div>
+
+              <div style={{ marginBottom: 18 }}>
+                <label className="iv-label">Quantity <span style={{ color: '#14b8a6' }}>*</span></label>
+                <input className="iv-input" type="number" value={adjData.quantity}
+                  onChange={(e) => setAdjData(p => ({ ...p, quantity: e.target.value }))}
+                  placeholder="Enter quantity" min="1"
+                  max={adjData.type === 'subtract' ? selectedPart.quantity : undefined}
+                  required style={{ fontSize: 16 }} />
+              </div>
+
+              {adjData.quantity && (
+                <div style={{
+                  padding: 14, borderRadius: 12, marginBottom: 4,
+                  background: adjData.type === 'add' ? 'rgba(16,185,129,.08)' : 'rgba(239,68,68,.08)',
+                  border: `1px solid ${adjData.type === 'add' ? 'rgba(16,185,129,.2)' : 'rgba(239,68,68,.2)'}`,
+                }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span style={{ fontWeight: 700, fontSize: 13, color: adjData.type === 'add' ? '#6ee7b7' : '#fca5a5' }}>New Stock Level</span>
+                    <span style={{ fontWeight: 800, fontSize: 22, color: adjData.type === 'add' ? '#6ee7b7' : '#fca5a5' }}>
+                      {adjData.type === 'add' ? selectedPart.quantity + Number(adjData.quantity) : selectedPart.quantity - Number(adjData.quantity)}
+                    </span>
+                  </div>
+                </div>
               )}
-              <th style={{
-                padding: '16px 20px',
-                textAlign: 'left',
-                fontSize: '12px',
-                fontWeight: '700',
-                color: '#64748b',
-                textTransform: 'uppercase',
-                letterSpacing: '0.5px'
-              }}>Status</th>
-              <th style={{
-                padding: '16px 20px',
-                textAlign: 'left',
-                fontSize: '12px',
-                fontWeight: '700',
-                color: '#64748b',
-                textTransform: 'uppercase',
-                letterSpacing: '0.5px'
-              }}>{isEmployee ? 'Location' : 'Branch'}</th>
-              <th style={{
-                padding: '16px 20px',
-                textAlign: 'right',
-                fontSize: '12px',
-                fontWeight: '700',
-                color: '#64748b',
-                textTransform: 'uppercase',
-                letterSpacing: '0.5px'
-              }}>Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {parts.map((part, index) => {
-              const stockStatus = getStockStatus(part);
-              return (
-                <tr 
-                  key={part.id}
-                  style={{
-                    borderBottom: index !== parts.length - 1 ? '1px solid #f1f5f9' : 'none',
-                    transition: 'background 0.2s',
-                    cursor: 'pointer'
-                  }}
-                  onMouseEnter={(e) => e.currentTarget.style.background = '#f8fafc'}
-                  onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
-                  onClick={() => openDetailModal(part)}
-                >
-                  <td style={{ padding: '16px 20px' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                      <div style={{
-                        width: '44px',
-                        height: '44px',
-                        background: 'linear-gradient(135deg, #f1f5f9 0%, #e2e8f0 100%)',
-                        borderRadius: '12px',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        fontSize: '20px',
-                        flexShrink: 0
-                      }}>
-                        {getCategoryIcon(part.category)}
-                      </div>
-                      <div>
-                        <p style={{
-                          fontWeight: '600',
-                          color: '#1e293b',
-                          fontSize: '15px',
-                          margin: 0,
-                          marginBottom: '2px'
-                        }}>{part.name}</p>
-                        <p style={{
-                          fontSize: '13px',
-                          color: '#64748b',
-                          margin: 0,
-                          fontFamily: 'monospace'
-                        }}>{part.partNumber}</p>
-                      </div>
-                    </div>
-                  </td>
-                  <td style={{ padding: '16px 20px' }}>
-                    <span style={{
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: '6px',
-                      padding: '6px 12px',
-                      background: '#f1f5f9',
-                      borderRadius: '8px',
-                      fontSize: '13px',
-                      fontWeight: '500',
-                      color: '#475569'
-                    }}>
-                      {getCategoryIcon(part.category)} {part.category}
-                    </span>
-                  </td>
-                  <td style={{ padding: '16px 20px' }}>
-                    <div>
-                      <p style={{
-                        fontWeight: '700',
-                        fontSize: '18px',
-                        color: part.quantity === 0 ? '#ef4444' : part.quantity <= part.minStockLevel ? '#f59e0b' : '#1e293b',
-                        margin: 0,
-                        marginBottom: '2px'
-                      }}>{part.quantity}</p>
-                      <p style={{
-                        fontSize: '12px',
-                        color: '#94a3b8',
-                        margin: 0
-                      }}>Min: {part.minStockLevel}</p>
-                    </div>
-                  </td>
-                  {!isEmployee && (
-                    <td style={{ padding: '16px 20px' }}>
-                      <div>
-                        <p style={{
-                          fontWeight: '600',
-                          fontSize: '15px',
-                          color: '#059669',
-                          margin: 0,
-                          marginBottom: '2px'
-                        }}>₹{part.sellingPrice.toLocaleString('en-IN')}</p>
-                        <p style={{
-                          fontSize: '12px',
-                          color: '#94a3b8',
-                          margin: 0
-                        }}>Cost: ₹{part.costPrice.toLocaleString('en-IN')}</p>
-                      </div>
-                    </td>
+
+              <ModalFooter onCancel={() => setShowAdjustModal(false)} submitting={submitting}
+                submitLabel={adjData.type === 'add' ? 'Add Stock' : 'Remove Stock'}
+                grad={adjData.type === 'add' ? 'linear-gradient(135deg,#10b981,#059669)' : 'linear-gradient(135deg,#ef4444,#dc2626)'}
+                glow={adjData.type === 'add' ? 'rgba(16,185,129,.3)' : 'rgba(239,68,68,.3)'} />
+            </form>
+          </div>
+        </Overlay>
+      )}
+
+      {/* Part Detail */}
+      {showDetailModal && selectedPart && (
+        <Overlay onClose={() => setShowDetailModal(false)}>
+          <div style={{ maxWidth: 520, width: '100%' }}>
+            <div style={{
+              padding: isMobile ? 22 : 26,
+              background: 'linear-gradient(135deg,rgba(20,184,166,.2),rgba(8,145,178,.1))',
+              borderRadius: '20px 20px 0 0',
+              border: '1px solid rgba(255,255,255,.08)', borderBottom: 'none',
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+                <div style={{ width: 56, height: 56, borderRadius: 16, background: 'rgba(255,255,255,.08)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 28, flexShrink: 0 }}>
+                  {catIcon(selectedPart.category)}
+                </div>
+                <div style={{ flex: 1 }}>
+                  <h2 style={{ margin: 0, fontSize: isMobile ? 18 : 22, fontWeight: 800, color: 'white' }}>{selectedPart.name}</h2>
+                  <p style={{ margin: '2px 0 0', fontSize: 13, color: 'rgba(255,255,255,.5)', fontFamily: 'monospace' }}>{selectedPart.partNumber}</p>
+                </div>
+                <CloseBtn onClick={() => setShowDetailModal(false)} />
+              </div>
+            </div>
+
+            <div style={{
+              padding: isMobile ? 20 : 24,
+              background: 'rgba(15,23,42,.97)',
+              borderRadius: '0 0 20px 20px',
+              border: '1px solid rgba(255,255,255,.06)', borderTop: 'none',
+              maxHeight: 'calc(80vh - 200px)', overflowY: 'auto',
+            }}>
+              {/* top stats */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 20 }}>
+                <MiniStatBox label="In Stock" value={selectedPart.quantity}
+                  color={selectedPart.quantity === 0 ? '#fca5a5' : selectedPart.quantity <= selectedPart.minStockLevel ? '#fcd34d' : 'white'} />
+                {!isEmployee
+                  ? <MiniStatBox label="Selling Price" value={`₹${selectedPart.sellingPrice.toLocaleString('en-IN')}`} color="#6ee7b7" />
+                  : <MiniStatBox label="Min Level" value={selectedPart.minStockLevel} color="#93c5fd" />
+                }
+              </div>
+
+              {/* detail rows */}
+              <div style={{ borderRadius: 12, overflow: 'hidden', border: '1px solid rgba(255,255,255,.06)' }}>
+                <DRow label="Category" value={`${catIcon(selectedPart.category)} ${selectedPart.category}`} />
+                <DRow label="Brand" value={selectedPart.brand || '—'} />
+                {!isEmployee && <DRow label="Cost Price" value={`₹${selectedPart.costPrice.toLocaleString('en-IN')}`} />}
+                <DRow label="Min Stock" value={selectedPart.minStockLevel} />
+                <DRow label="Location" value={selectedPart.location || '—'} />
+                {!isEmployee && <DRow label="Supplier" value={selectedPart.supplier || '—'} />}
+                <DRow label="Branch" value={selectedPart.branch?.name || '—'} />
+                <DRow label="Times Used" value={`${selectedPart._count?.jobs || 0} jobs`} last />
+              </div>
+
+              {selectedPart.description && (
+                <div style={{ marginTop: 16, padding: 14, borderRadius: 12, background: 'rgba(255,255,255,.03)', border: '1px solid rgba(255,255,255,.05)' }}>
+                  <p style={{ margin: 0, fontSize: 10, color: 'rgba(255,255,255,.35)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.5px', marginBottom: 4 }}>Description</p>
+                  <p style={{ margin: 0, fontSize: 13, color: 'rgba(255,255,255,.6)', lineHeight: 1.5 }}>{selectedPart.description}</p>
+                </div>
+              )}
+
+              {/* actions */}
+              <div style={{ display: 'flex', gap: 8, marginTop: 20, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                <GlassBtn onClick={() => setShowDetailModal(false)} label="Close" outline color="rgba(255,255,255,.4)" />
+                {canManage && (
+                  <>
+                    <GlassBtn onClick={() => { setShowDetailModal(false); openAdjust(selectedPart); }} label="Adjust Stock" grad="linear-gradient(135deg,#14b8a6,#0891b2)" glow="rgba(20,184,166,.3)" />
+                    <GlassBtn onClick={() => { setShowDetailModal(false); openEdit(selectedPart); }} label="Edit" grad="linear-gradient(135deg,#3b82f6,#1d4ed8)" glow="rgba(59,130,246,.3)" />
+                  </>
+                )}
+              </div>
+            </div>
+          </div>
+        </Overlay>
+      )}
+
+      {/* Bulk Upload */}
+      {showBulkModal && (
+        <Overlay onClose={() => { if (!isProcessing && !submitting) { setShowBulkModal(false); setUploadFile(null); setUploadPreview([]); setUploadErrors([]); } }}>
+          <div style={{ maxWidth: 620, width: '100%' }}>
+            <ModalHeader grad="linear-gradient(135deg,#8b5cf6,#6d28d9)"
+              title="📤 Bulk Upload Parts"
+              sub="Upload Excel to add multiple parts"
+              onClose={() => { if (!isProcessing && !submitting) { setShowBulkModal(false); setUploadFile(null); setUploadPreview([]); setUploadErrors([]); } }} />
+
+            <div style={{
+              padding: isMobile ? 20 : 24,
+              background: 'rgba(15,23,42,.97)',
+              borderRadius: '0 0 20px 20px',
+              border: '1px solid rgba(255,255,255,.06)', borderTop: 'none',
+              maxHeight: 'calc(80vh - 200px)', overflowY: 'auto',
+            }}>
+              {/* drop zone */}
+              <div style={{
+                border: `2px dashed ${uploadFile ? 'rgba(16,185,129,.4)' : 'rgba(255,255,255,.12)'}`,
+                borderRadius: 16, padding: isMobile ? 24 : 32, textAlign: 'center', marginBottom: 18,
+                background: uploadFile ? 'rgba(16,185,129,.05)' : 'rgba(255,255,255,.02)',
+                transition: 'all .3s',
+              }}>
+                <input type="file" accept=".xlsx,.xls" onChange={handleFileUpload}
+                  disabled={isProcessing || submitting} style={{ display: 'none' }} id="bulk-input" />
+                <label htmlFor="bulk-input" style={{ cursor: (isProcessing || submitting) ? 'not-allowed' : 'pointer', display: 'block' }}>
+                  <div style={{ width: 56, height: 56, borderRadius: 16, background: uploadFile ? 'rgba(16,185,129,.12)' : 'rgba(255,255,255,.06)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 14px', fontSize: 28 }}>
+                    {isProcessing ? '⏳' : uploadFile ? '✅' : '📁'}
+                  </div>
+                  {isProcessing ? (
+                    <p style={{ color: 'rgba(255,255,255,.5)', fontSize: 14 }}>Processing...</p>
+                  ) : uploadFile ? (
+                    <>
+                      <p style={{ margin: 0, fontWeight: 700, color: '#6ee7b7', fontSize: 14 }}>{uploadFile.name}</p>
+                      <p style={{ margin: '4px 0 0', color: 'rgba(255,255,255,.35)', fontSize: 12 }}>Click to change</p>
+                    </>
+                  ) : (
+                    <>
+                      <p style={{ margin: 0, fontWeight: 700, color: 'white', fontSize: 14 }}>Click to upload Excel</p>
+                      <p style={{ margin: '4px 0 0', color: 'rgba(255,255,255,.35)', fontSize: 12 }}>.xlsx or .xls</p>
+                    </>
                   )}
-                  <td style={{ padding: '16px 20px' }}>
-                    <span style={{
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: '6px',
-                      padding: '6px 12px',
-                      borderRadius: '20px',
-                      fontSize: '12px',
-                      fontWeight: '600',
-                      background: stockStatus.color.includes('red') ? '#fef2f2' :
-                                  stockStatus.color.includes('yellow') ? '#fffbeb' : '#f0fdf4',
-                      color: stockStatus.color.includes('red') ? '#dc2626' :
-                             stockStatus.color.includes('yellow') ? '#d97706' : '#16a34a'
-                    }}>
-                      {stockStatus.icon} {stockStatus.label}
-                    </span>
-                  </td>
-                  <td style={{ padding: '16px 20px' }}>
-                    <span style={{
-                      fontSize: '14px',
-                      color: (isEmployee ? part.location : part.branch?.name) ? '#475569' : '#94a3b8'
-                    }}>
-                      {isEmployee ? (part.location || '—') : (part.branch?.name || '—')}
-                    </span>
-                  </td>
-                  <td style={{ padding: '16px 20px' }}>
-                    <div style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'flex-end',
-                      gap: '8px'
-                    }}>
-                      {canManageInventory && (
-                        <ActionButton
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            openAdjustModal(part);
-                          }}
-                          icon={
-                            <svg style={{ width: '18px', height: '18px' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
-                            </svg>
-                          }
-                          title="Adjust Stock"
-                          hoverColor="#14b8a6"
-                          hoverBg="#f0fdfa"
-                        />
-                      )}
-                      <ActionButton
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          openDetailModal(part);
-                        }}
-                        icon={
-                          <svg style={{ width: '18px', height: '18px' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-                          </svg>
-                        }
-                        title="View Details"
-                        hoverColor="#3b82f6"
-                        hoverBg="#eff6ff"
-                      />
-                      {canManageInventory && (
-                        <>
-                          <ActionButton
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              openEditModal(part);
-                            }}
-                            icon={
-                              <svg style={{ width: '18px', height: '18px' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                              </svg>
-                            }
-                            title="Edit"
-                            hoverColor="#10b981"
-                            hoverBg="#f0fdf4"
-                          />
-                          <ActionButton
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleDelete(part);
-                            }}
-                            icon={
-                              <svg style={{ width: '18px', height: '18px' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                              </svg>
-                            }
-                            title="Delete"
-                            hoverColor="#ef4444"
-                            hoverBg="#fef2f2"
-                          />
-                        </>
-                      )}
-                    </div>
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
+                </label>
+              </div>
+
+              {/* preview */}
+              {uploadPreview.length > 0 && (
+                <div style={{ marginBottom: 16 }}>
+                  <p style={{ margin: '0 0 10px', fontSize: 13, fontWeight: 700, color: '#6ee7b7' }}>✅ Valid Items ({uploadPreview.length})</p>
+                  <div style={{ borderRadius: 12, overflow: 'hidden', border: '1px solid rgba(255,255,255,.06)', maxHeight: 180, overflowY: 'auto' }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+                      <thead>
+                        <tr style={{ background: 'rgba(255,255,255,.04)' }}>
+                          <th style={{ padding: '8px 12px', textAlign: 'left', fontWeight: 700, color: 'rgba(255,255,255,.4)' }}>Part #</th>
+                          <th style={{ padding: '8px 12px', textAlign: 'left', fontWeight: 700, color: 'rgba(255,255,255,.4)' }}>Name</th>
+                          <th style={{ padding: '8px 12px', textAlign: 'right', fontWeight: 700, color: 'rgba(255,255,255,.4)' }}>Qty</th>
+                          <th style={{ padding: '8px 12px', textAlign: 'right', fontWeight: 700, color: 'rgba(255,255,255,.4)' }}>Price</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {uploadPreview.slice(0, 8).map((item, i) => (
+                          <tr key={i} style={{ borderTop: '1px solid rgba(255,255,255,.04)' }}>
+                            <td style={{ padding: '8px 12px', fontFamily: 'monospace', color: 'rgba(255,255,255,.6)' }}>{item.partNumber}</td>
+                            <td style={{ padding: '8px 12px', color: 'white' }}>{item.name}</td>
+                            <td style={{ padding: '8px 12px', textAlign: 'right', color: 'rgba(255,255,255,.6)' }}>{item.quantity}</td>
+                            <td style={{ padding: '8px 12px', textAlign: 'right', color: '#6ee7b7' }}>₹{item.sellingPrice}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                    {uploadPreview.length > 8 && (
+                      <p style={{ textAlign: 'center', padding: 8, color: 'rgba(255,255,255,.35)', fontSize: 11, margin: 0, background: 'rgba(255,255,255,.02)' }}>
+                        + {uploadPreview.length - 8} more
+                      </p>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* errors */}
+              {uploadErrors.length > 0 && (
+                <div style={{ marginBottom: 16 }}>
+                  <p style={{ margin: '0 0 10px', fontSize: 13, fontWeight: 700, color: '#fca5a5' }}>❌ Errors ({uploadErrors.length})</p>
+                  <div style={{ borderRadius: 12, overflow: 'hidden', border: '1px solid rgba(239,68,68,.2)', maxHeight: 140, overflowY: 'auto', background: 'rgba(239,68,68,.05)' }}>
+                    {uploadErrors.map((err, i) => (
+                      <div key={i} style={{ padding: 10, borderBottom: i < uploadErrors.length - 1 ? '1px solid rgba(239,68,68,.1)' : 'none' }}>
+                        <p style={{ margin: '0 0 4px', fontWeight: 700, color: '#fca5a5', fontSize: 12 }}>Row {err.row}: {err.data.partNumber || '?'}</p>
+                        <ul style={{ margin: 0, paddingLeft: 16, color: 'rgba(239,68,68,.7)', fontSize: 11 }}>
+                          {err.errors.map((e, j) => <li key={j}>{e}</li>)}
+                        </ul>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* tips */}
+              <div style={{ padding: 14, borderRadius: 12, background: 'rgba(59,130,246,.06)', border: '1px solid rgba(59,130,246,.15)' }}>
+                <p style={{ margin: '0 0 6px', fontSize: 12, fontWeight: 700, color: '#93c5fd' }}>💡 Tips</p>
+                <ul style={{ margin: 0, paddingLeft: 18, fontSize: 11, color: 'rgba(255,255,255,.4)', lineHeight: 1.6 }}>
+                  <li>Download template first</li>
+                  <li>Required: Part Number, Name, Category, Cost/Selling Price, Quantity</li>
+                  <li>Categories: PARTS, ACCESSORIES, FLUIDS, FILTERS, ELECTRICAL, BODY, TYRES, TOOLS, OTHER</li>
+                </ul>
+              </div>
+
+              {/* footer */}
+              <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 20, paddingTop: 18, borderTop: '1px solid rgba(255,255,255,.06)' }}>
+                <GlassBtn onClick={() => { setShowBulkModal(false); setUploadFile(null); setUploadPreview([]); setUploadErrors([]); }}
+                  label="Cancel" outline color="rgba(255,255,255,.4)"
+                  disabled={isProcessing || submitting} />
+                <button onClick={handleBulkUpload}
+                  disabled={!uploadPreview.length || isProcessing || submitting}
+                  className="iv-btn" style={{
+                    padding: '10px 22px', borderRadius: 12,
+                    background: (uploadPreview.length && !isProcessing && !submitting) ? 'linear-gradient(135deg,#8b5cf6,#6d28d9)' : 'rgba(255,255,255,.06)',
+                    border: 'none',
+                    color: (uploadPreview.length && !isProcessing && !submitting) ? 'white' : 'rgba(255,255,255,.3)',
+                    fontSize: 13, fontWeight: 700,
+                    boxShadow: (uploadPreview.length && !isProcessing && !submitting) ? '0 4px 14px rgba(139,92,246,.3)' : 'none',
+                    display: 'flex', alignItems: 'center', gap: 8,
+                    opacity: (!uploadPreview.length || isProcessing || submitting) ? .5 : 1,
+                  }}>
+                  {submitting && <Spin size={15} />}
+                  {submitting ? 'Uploading...' : `Upload ${uploadPreview.length} Parts`}
+                </button>
+              </div>
+            </div>
+          </div>
+        </Overlay>
+      )}
+
+      {/* Delete Confirm */}
+      {showDeleteConfirm && (
+        <Overlay onClose={() => setShowDeleteConfirm(null)}>
+          <div style={{
+            maxWidth: 380, width: '100%',
+            background: 'rgba(15,23,42,.97)',
+            borderRadius: 20, border: '1px solid rgba(255,255,255,.06)',
+            padding: 28, textAlign: 'center',
+          }}>
+            <div style={{ width: 56, height: 56, borderRadius: '50%', background: 'rgba(239,68,68,.12)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px', fontSize: 26 }}>⚠️</div>
+            <h3 style={{ margin: '0 0 6px', fontSize: 17, fontWeight: 800, color: 'white' }}>Delete Part?</h3>
+            <p style={{ margin: '0 0 20px', fontSize: 13, color: 'rgba(255,255,255,.45)' }}>
+              Delete <span style={{ color: '#fca5a5', fontWeight: 700 }}>{showDeleteConfirm.name}</span>?
+            </p>
+            <div style={{ display: 'flex', gap: 10 }}>
+              <GlassBtn onClick={() => setShowDeleteConfirm(null)} label="Cancel" outline color="rgba(255,255,255,.4)" style={{ flex: 1 }} />
+              <button onClick={() => handleDelete(showDeleteConfirm)} disabled={submitting}
+                className="iv-btn" style={{
+                  flex: 1, padding: '10px 0', borderRadius: 12,
+                  background: 'linear-gradient(135deg,#ef4444,#dc2626)',
+                  border: 'none', color: 'white', fontSize: 13, fontWeight: 700,
+                  opacity: submitting ? .6 : 1,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+                }}>
+                {submitting && <Spin size={14} />}
+                Delete
+              </button>
+            </div>
+          </div>
+        </Overlay>
+      )}
+    </>
+  );
+}
+
+// ══════════════════════════════════════════════
+// SHARED COMPONENTS
+// ══════════════════════════════════════════════
+
+function Overlay({ children, onClose }) {
+  return (
+    <div className="iv-overlay" onClick={onClose} style={{
+      position: 'fixed', inset: 0, zIndex: 100,
+      background: 'rgba(0,0,0,.65)',
+      backdropFilter: 'blur(8px)', WebkitBackdropFilter: 'blur(8px)',
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+      padding: 16,
+    }}>
+      <div className="iv-modal" onClick={(e) => e.stopPropagation()}>
+        {children}
       </div>
     </div>
   );
 }
 
-function ActionButton({ onClick, icon, title, hoverColor, hoverBg }) {
-  const [isHovered, setIsHovered] = useState(false);
-
+function ModalHeader({ grad, title, sub, onClose }) {
   return (
-    <button
-      onClick={onClick}
-      onMouseEnter={() => setIsHovered(true)}
-      onMouseLeave={() => setIsHovered(false)}
-      title={title}
-      style={{
-        padding: '8px',
-        border: 'none',
-        borderRadius: '10px',
-        background: isHovered ? hoverBg : 'transparent',
-        color: isHovered ? hoverColor : '#64748b',
-        cursor: 'pointer',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        transition: 'all 0.2s'
-      }}
-    >
-      {icon}
+    <div style={{
+      padding: '18px 22px', background: grad,
+      borderRadius: '20px 20px 0 0',
+      position: 'relative', overflow: 'hidden',
+    }}>
+      <div style={{ position: 'absolute', top: -30, right: -30, width: 80, height: 80, borderRadius: '50%', background: 'rgba(255,255,255,.1)', pointerEvents: 'none' }} />
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', position: 'relative', zIndex: 1 }}>
+        <div>
+          <h2 style={{ margin: 0, fontSize: 17, fontWeight: 800, color: 'white' }}>{title}</h2>
+          <p style={{ margin: '3px 0 0', fontSize: 12, color: 'rgba(255,255,255,.7)' }}>{sub}</p>
+        </div>
+        <CloseBtn onClick={onClose} />
+      </div>
+    </div>
+  );
+}
+
+function ModalFooter({ onCancel, submitting, submitLabel, grad, glow }) {
+  return (
+    <div style={{
+      display: 'flex', gap: 10, justifyContent: 'flex-end',
+      marginTop: 22, paddingTop: 18,
+      borderTop: '1px solid rgba(255,255,255,.06)',
+    }}>
+      <button type="button" onClick={onCancel} disabled={submitting} className="iv-btn" style={{
+        padding: '10px 20px', borderRadius: 12,
+        background: 'rgba(255,255,255,.05)',
+        border: '1px solid rgba(255,255,255,.1)',
+        color: 'rgba(255,255,255,.55)', fontSize: 13, fontWeight: 600,
+        opacity: submitting ? .5 : 1,
+      }}>Cancel</button>
+      <button type="submit" disabled={submitting} className="iv-btn" style={{
+        padding: '10px 22px', borderRadius: 12,
+        background: grad, border: 'none',
+        color: 'white', fontSize: 13, fontWeight: 700,
+        opacity: submitting ? .6 : 1,
+        display: 'flex', alignItems: 'center', gap: 8,
+        boxShadow: `0 4px 14px ${glow}`,
+      }}>
+        {submitting && <Spin size={15} />}
+        {submitLabel}
+      </button>
+    </div>
+  );
+}
+
+function CloseBtn({ onClick }) {
+  return (
+    <button onClick={onClick} style={{
+      width: 30, height: 30, borderRadius: 9,
+      background: 'rgba(255,255,255,.14)', border: 'none',
+      cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
+      transition: 'background .2s',
+    }}>
+      <svg style={{ width: 15, height: 15, color: 'white' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M6 18L18 6M6 6l12 12" />
+      </svg>
     </button>
   );
 }
 
-function MobilePartsCards({ 
-  parts, 
-  getCategoryIcon, 
-  getStockStatus, 
-  canManageInventory,
-  openAdjustModal,
-  openDetailModal,
-  isEmployee
-}) {
+function Spin({ size = 16 }) {
+  return <div style={{
+    width: size, height: size,
+    border: '2px solid rgba(255,255,255,.2)',
+    borderTopColor: 'white', borderRadius: '50%',
+    animation: 'ivSpin .6s linear infinite', flexShrink: 0,
+  }} />;
+}
+
+function GlassBtn({ onClick, label, grad, glow, outline, color, disabled, style = {} }) {
   return (
-    <div style={{
-      display: 'flex',
-      flexDirection: 'column',
-      gap: '12px'
-    }}>
-      {parts.map((part) => {
-        const stockStatus = getStockStatus(part);
-        return (
-          <div 
-            key={part.id}
-            style={{
-              background: 'white',
-              borderRadius: '16px',
-              boxShadow: '0 1px 3px rgba(0,0,0,0.05)',
-              border: '1px solid rgba(0,0,0,0.05)',
-              padding: '16px',
-              animation: 'slideUp 0.3s ease-out'
-            }}
-            onClick={() => openDetailModal(part)}
-          >
-            <div style={{
-              display: 'flex',
-              alignItems: 'flex-start',
-              justifyContent: 'space-between',
-              marginBottom: '12px'
-            }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flex: 1, minWidth: 0 }}>
-                <div style={{
-                  width: '48px',
-                  height: '48px',
-                  background: 'linear-gradient(135deg, #f1f5f9 0%, #e2e8f0 100%)',
-                  borderRadius: '14px',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  fontSize: '24px',
-                  flexShrink: 0
-                }}>
-                  {getCategoryIcon(part.category)}
-                </div>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <p style={{
-                    fontWeight: '600',
-                    color: '#1e293b',
-                    fontSize: '15px',
-                    margin: 0,
-                    marginBottom: '2px',
-                    overflow: 'hidden',
-                    textOverflow: 'ellipsis',
-                    whiteSpace: 'nowrap'
-                  }}>{part.name}</p>
-                  <p style={{
-                    fontSize: '12px',
-                    color: '#64748b',
-                    margin: 0,
-                    fontFamily: 'monospace'
-                  }}>{part.partNumber}</p>
-                </div>
-              </div>
-              <span style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: '4px',
-                padding: '4px 10px',
-                borderRadius: '16px',
-                fontSize: '11px',
-                fontWeight: '600',
-                background: stockStatus.color.includes('red') ? '#fef2f2' :
-                            stockStatus.color.includes('yellow') ? '#fffbeb' : '#f0fdf4',
-                color: stockStatus.color.includes('red') ? '#dc2626' :
-                       stockStatus.color.includes('yellow') ? '#d97706' : '#16a34a',
-                flexShrink: 0
-              }}>
-                {stockStatus.icon} {stockStatus.label}
-              </span>
-            </div>
-
-            <div style={{
-              display: 'grid',
-              gridTemplateColumns: isEmployee ? 'repeat(2, 1fr)' : 'repeat(3, 1fr)',
-              gap: '8px',
-              marginBottom: '12px'
-            }}>
-              <div style={{
-                textAlign: 'center',
-                padding: '10px 8px',
-                background: '#f8fafc',
-                borderRadius: '10px'
-              }}>
-                <p style={{
-                  fontSize: '18px',
-                  fontWeight: '700',
-                  color: part.quantity === 0 ? '#ef4444' : part.quantity <= part.minStockLevel ? '#f59e0b' : '#1e293b',
-                  margin: 0,
-                  marginBottom: '2px'
-                }}>{part.quantity}</p>
-                <p style={{
-                  fontSize: '11px',
-                  color: '#64748b',
-                  margin: 0
-                }}>In Stock</p>
-              </div>
-              {!isEmployee && (
-                <div style={{
-                  textAlign: 'center',
-                  padding: '10px 8px',
-                  background: '#f0fdf4',
-                  borderRadius: '10px'
-                }}>
-                  <p style={{
-                    fontSize: '16px',
-                    fontWeight: '700',
-                    color: '#059669',
-                    margin: 0,
-                    marginBottom: '2px'
-                  }}>₹{part.sellingPrice.toLocaleString('en-IN')}</p>
-                  <p style={{
-                    fontSize: '11px',
-                    color: '#64748b',
-                    margin: 0
-                  }}>Price</p>
-                </div>
-              )}
-              <div style={{
-                textAlign: 'center',
-                padding: '10px 8px',
-                background: '#eff6ff',
-                borderRadius: '10px'
-              }}>
-                <p style={{
-                  fontSize: '18px',
-                  fontWeight: '700',
-                  color: '#3b82f6',
-                  margin: 0,
-                  marginBottom: '2px'
-                }}>{part._count?.jobs || 0}</p>
-                <p style={{
-                  fontSize: '11px',
-                  color: '#64748b',
-                  margin: 0
-                }}>Used</p>
-              </div>
-            </div>
-
-            <div style={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              paddingTop: '12px',
-              borderTop: '1px solid #f1f5f9'
-            }}>
-              <span style={{
-                fontSize: '12px',
-                color: '#64748b',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '4px'
-              }}>
-                {isEmployee ? `📍 ${part.location || 'No location'}` : `${getCategoryIcon(part.category)} ${part.category}`}
-              </span>
-              <div style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '8px'
-              }}>
-                {canManageInventory && (
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      openAdjustModal(part);
-                    }}
-                    style={{
-                      padding: '8px 12px',
-                      background: '#f0fdfa',
-                      border: 'none',
-                      borderRadius: '8px',
-                      color: '#14b8a6',
-                      fontSize: '13px',
-                      fontWeight: '600',
-                      cursor: 'pointer',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '4px'
-                    }}
-                  >
-                    <svg style={{ width: '16px', height: '16px' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
-                    </svg>
-                    Adjust
-                  </button>
-                )}
-                <span style={{
-                  color: '#3b82f6',
-                  fontWeight: '600',
-                  fontSize: '13px'
-                }}>
-                  Details →
-                </span>
-              </div>
-            </div>
-          </div>
-        );
-      })}
-    </div>
+    <button onClick={onClick} disabled={disabled} className="iv-btn" style={{
+      padding: '10px 20px', borderRadius: 12, fontSize: 13, fontWeight: 700,
+      background: outline ? 'transparent' : (grad || 'rgba(255,255,255,.06)'),
+      border: outline ? `1px solid ${color || 'rgba(255,255,255,.15)'}` : 'none',
+      color: outline ? (color || 'rgba(255,255,255,.6)') : 'white',
+      boxShadow: glow ? `0 4px 14px ${glow}` : 'none',
+      opacity: disabled ? .5 : 1,
+      display: 'inline-flex', alignItems: 'center', gap: 6,
+      ...style,
+    }}>{label}</button>
   );
 }
 
-function BulkUploadModal({ 
-  isMobile, 
-  isProcessing, 
-  submitting, 
-  uploadFile, 
-  uploadPreview, 
-  uploadErrors,
-  handleFileUpload,
-  handleBulkUpload,
-  onClose 
-}) {
-  return (
-    <div 
-      style={{
-        position: 'fixed',
-        top: 0,
-        left: 0,
-        right: 0,
-        bottom: 0,
-        background: 'rgba(0,0,0,0.5)',
-        backdropFilter: 'blur(4px)',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        zIndex: 50,
-        padding: isMobile ? '16px' : '24px'
-      }}
-      onClick={onClose}
-    >
-      <div 
-        style={{
-          background: 'white',
-          borderRadius: isMobile ? '20px' : '24px',
-          boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)',
-          width: '100%',
-          maxWidth: '700px',
-          maxHeight: '90vh',
-          overflow: 'hidden',
-          animation: 'slideUp 0.3s ease-out'
-        }}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div style={{
-          background: 'linear-gradient(135deg, #8b5cf6 0%, #6d28d9 100%)',
-          padding: isMobile ? '20px' : '24px',
-          color: 'white'
-        }}>
-          <div style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between'
-          }}>
-            <div>
-              <h2 style={{
-                fontSize: isMobile ? '20px' : '24px',
-                fontWeight: '700',
-                margin: 0,
-                marginBottom: '4px'
-              }}>
-                📤 Bulk Upload Parts
-              </h2>
-              <p style={{
-                fontSize: isMobile ? '13px' : '14px',
-                opacity: 0.9,
-                margin: 0
-              }}>
-                Upload an Excel file to add multiple parts at once
-              </p>
-            </div>
-            <button
-              onClick={onClose}
-              disabled={isProcessing || submitting}
-              style={{
-                padding: '8px',
-                background: 'rgba(255,255,255,0.15)',
-                border: 'none',
-                borderRadius: '10px',
-                color: 'white',
-                cursor: isProcessing || submitting ? 'not-allowed' : 'pointer',
-                transition: 'all 0.2s',
-                opacity: isProcessing || submitting ? 0.5 : 1
-              }}
-            >
-              <svg style={{ width: '20px', height: '20px' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-              </svg>
-            </button>
-          </div>
-        </div>
-
-        <div style={{
-          padding: isMobile ? '20px' : '24px',
-          maxHeight: 'calc(90vh - 200px)',
-          overflowY: 'auto'
-        }}>
-          <div style={{
-            border: '2px dashed #d1d5db',
-            borderRadius: '16px',
-            padding: isMobile ? '24px' : '32px',
-            textAlign: 'center',
-            marginBottom: '20px',
-            background: uploadFile ? '#f0fdf4' : '#f9fafb',
-            borderColor: uploadFile ? '#10b981' : '#d1d5db',
-            transition: 'all 0.3s'
-          }}>
-            <input
-              type="file"
-              accept=".xlsx,.xls"
-              onChange={handleFileUpload}
-              disabled={isProcessing || submitting}
-              style={{ display: 'none' }}
-              id="bulk-upload-input"
-            />
-            <label 
-              htmlFor="bulk-upload-input"
-              style={{
-                cursor: isProcessing || submitting ? 'not-allowed' : 'pointer',
-                display: 'block'
-              }}
-            >
-              <div style={{
-                width: '64px',
-                height: '64px',
-                background: uploadFile ? '#dcfce7' : '#e5e7eb',
-                borderRadius: '16px',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                margin: '0 auto 16px',
-                fontSize: '32px'
-              }}>
-                {isProcessing ? '⏳' : uploadFile ? '✅' : '📁'}
-              </div>
-              
-              {isProcessing ? (
-                <p style={{ color: '#6b7280', fontSize: '15px', margin: 0 }}>
-                  Processing file...
-                </p>
-              ) : uploadFile ? (
-                <>
-                  <p style={{
-                    fontWeight: '600',
-                    color: '#059669',
-                    fontSize: '16px',
-                    margin: 0,
-                    marginBottom: '4px'
-                  }}>
-                    {uploadFile.name}
-                  </p>
-                  <p style={{ color: '#6b7280', fontSize: '14px', margin: 0 }}>
-                    Click to change file
-                  </p>
-                </>
-              ) : (
-                <>
-                  <p style={{
-                    fontWeight: '600',
-                    color: '#374151',
-                    fontSize: '16px',
-                    margin: 0,
-                    marginBottom: '4px'
-                  }}>
-                    Click to upload Excel file
-                  </p>
-                  <p style={{ color: '#6b7280', fontSize: '14px', margin: 0 }}>
-                    or drag and drop (.xlsx, .xls)
-                  </p>
-                </>
-              )}
-            </label>
-          </div>
-
-          {uploadPreview.length > 0 && (
-            <div style={{ marginBottom: '20px' }}>
-              <h3 style={{
-                fontSize: '16px',
-                fontWeight: '600',
-                color: '#1e293b',
-                margin: 0,
-                marginBottom: '12px'
-              }}>
-                ✅ Valid Items ({uploadPreview.length})
-              </h3>
-              
-              <div style={{
-                background: '#f8fafc',
-                borderRadius: '12px',
-                maxHeight: '200px',
-                overflowY: 'auto',
-                border: '1px solid #e2e8f0'
-              }}>
-                <table style={{
-                  width: '100%',
-                  borderCollapse: 'collapse',
-                  fontSize: '13px'
-                }}>
-                  <thead>
-                    <tr style={{ background: '#f1f5f9' }}>
-                      <th style={{ padding: '10px 12px', textAlign: 'left', fontWeight: '600', color: '#475569' }}>Part #</th>
-                      <th style={{ padding: '10px 12px', textAlign: 'left', fontWeight: '600', color: '#475569' }}>Name</th>
-                      <th style={{ padding: '10px 12px', textAlign: 'right', fontWeight: '600', color: '#475569' }}>Qty</th>
-                      <th style={{ padding: '10px 12px', textAlign: 'right', fontWeight: '600', color: '#475569' }}>Price</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {uploadPreview.slice(0, 10).map((item, index) => (
-                      <tr key={index} style={{ borderTop: '1px solid #e2e8f0' }}>
-                        <td style={{ padding: '10px 12px', fontFamily: 'monospace' }}>{item.partNumber}</td>
-                        <td style={{ padding: '10px 12px' }}>{item.name}</td>
-                        <td style={{ padding: '10px 12px', textAlign: 'right' }}>{item.quantity}</td>
-                        <td style={{ padding: '10px 12px', textAlign: 'right' }}>₹{item.sellingPrice}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-                {uploadPreview.length > 10 && (
-                  <p style={{
-                    textAlign: 'center',
-                    padding: '10px',
-                    color: '#6b7280',
-                    fontSize: '13px',
-                    margin: 0,
-                    background: '#f1f5f9'
-                  }}>
-                    + {uploadPreview.length - 10} more items
-                  </p>
-                )}
-              </div>
-            </div>
-          )}
-
-          {uploadErrors.length > 0 && (
-            <div style={{ marginBottom: '20px' }}>
-              <h3 style={{
-                fontSize: '16px',
-                fontWeight: '600',
-                color: '#dc2626',
-                margin: 0,
-                marginBottom: '12px'
-              }}>
-                ❌ Errors ({uploadErrors.length})
-              </h3>
-              
-              <div style={{
-                background: '#fef2f2',
-                borderRadius: '12px',
-                maxHeight: '150px',
-                overflowY: 'auto',
-                border: '1px solid #fecaca'
-              }}>
-                {uploadErrors.map((error, index) => (
-                  <div 
-                    key={index}
-                    style={{
-                      padding: '12px',
-                      borderBottom: index !== uploadErrors.length - 1 ? '1px solid #fecaca' : 'none'
-                    }}
-                  >
-                    <p style={{
-                      fontWeight: '600',
-                      color: '#b91c1c',
-                      fontSize: '13px',
-                      margin: 0,
-                      marginBottom: '4px'
-                    }}>
-                      Row {error.row}: {error.data.partNumber || 'Unknown'}
-                    </p>
-                    <ul style={{
-                      margin: 0,
-                      paddingLeft: '20px',
-                      color: '#dc2626',
-                      fontSize: '12px'
-                    }}>
-                      {error.errors.map((err, i) => (
-                        <li key={i}>{err}</li>
-                      ))}
-                    </ul>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          <div style={{
-            background: '#eff6ff',
-            borderRadius: '12px',
-            padding: '16px',
-            border: '1px solid #bfdbfe'
-          }}>
-            <h4 style={{
-              fontSize: '14px',
-              fontWeight: '600',
-              color: '#1d4ed8',
-              margin: 0,
-              marginBottom: '8px',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '8px'
-            }}>
-              💡 Tips for successful upload
-            </h4>
-            <ul style={{
-              margin: 0,
-              paddingLeft: '20px',
-              fontSize: '13px',
-              color: '#1e40af',
-              lineHeight: 1.6
-            }}>
-              <li>Download the template first to see the correct format</li>
-              <li>Required fields: Part Number, Name, Category, Cost Price, Selling Price, Quantity</li>
-              <li>Valid categories: PARTS, ACCESSORIES, FLUIDS, FILTERS, ELECTRICAL, BODY, TYRES, TOOLS, OTHER</li>
-              <li>Part numbers must be unique</li>
-            </ul>
-          </div>
-        </div>
-
-        <div style={{
-          padding: isMobile ? '16px 20px' : '20px 24px',
-          borderTop: '1px solid #e5e7eb',
-          display: 'flex',
-          gap: '12px',
-          justifyContent: 'flex-end',
-          background: '#f9fafb'
-        }}>
-          <button
-            onClick={onClose}
-            disabled={isProcessing || submitting}
-            style={{
-              padding: '12px 24px',
-              border: '2px solid #e5e7eb',
-              borderRadius: '12px',
-              background: 'white',
-              color: '#374151',
-              fontWeight: '600',
-              fontSize: '15px',
-              cursor: isProcessing || submitting ? 'not-allowed' : 'pointer',
-              opacity: isProcessing || submitting ? 0.5 : 1,
-              transition: 'all 0.2s'
-            }}
-          >
-            Cancel
-          </button>
-          <button
-            onClick={handleBulkUpload}
-            disabled={uploadPreview.length === 0 || isProcessing || submitting}
-            style={{
-              padding: '12px 24px',
-              border: 'none',
-              borderRadius: '12px',
-              background: uploadPreview.length > 0 && !isProcessing && !submitting
-                ? 'linear-gradient(135deg, #8b5cf6 0%, #6d28d9 100%)'
-                : '#e5e7eb',
-              color: uploadPreview.length > 0 && !isProcessing && !submitting ? 'white' : '#9ca3af',
-              fontWeight: '600',
-              fontSize: '15px',
-              cursor: uploadPreview.length === 0 || isProcessing || submitting ? 'not-allowed' : 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '8px',
-              boxShadow: uploadPreview.length > 0 && !isProcessing && !submitting
-                ? '0 4px 12px rgba(139, 92, 246, 0.3)'
-                : 'none',
-              transition: 'all 0.2s'
-            }}
-          >
-            {submitting && (
-              <div style={{
-                width: '18px',
-                height: '18px',
-                border: '2px solid rgba(255,255,255,0.3)',
-                borderTopColor: 'white',
-                borderRadius: '50%',
-                animation: 'spin 1s linear infinite'
-              }} />
-            )}
-            {submitting ? 'Uploading...' : `Upload ${uploadPreview.length} Parts`}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function AddEditPartModal({
-  showModal,
-  setShowModal,
-  editingPart,
-  formData,
-  handleChange,
-  handleSubmit,
-  submitting,
-  categories,
-  branches,
-  currentUser,
-  isMobile
-}) {
-  if (!showModal) return null;
-
-  return (
-    <div 
-      style={{
-        position: 'fixed',
-        top: 0,
-        left: 0,
-        right: 0,
-        bottom: 0,
-        background: 'rgba(0,0,0,0.5)',
-        backdropFilter: 'blur(4px)',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        zIndex: 50,
-        padding: isMobile ? '16px' : '24px'
-      }}
-      onClick={() => setShowModal(false)}
-    >
-      <div 
-        style={{
-          background: 'white',
-          borderRadius: isMobile ? '20px' : '24px',
-          boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)',
-          width: '100%',
-          maxWidth: '700px',
-          maxHeight: '90vh',
-          overflow: 'hidden',
-          animation: 'slideUp 0.3s ease-out'
-        }}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div style={{
-          background: 'linear-gradient(135deg, #14b8a6 0%, #0891b2 100%)',
-          padding: isMobile ? '20px' : '24px',
-          color: 'white'
-        }}>
-          <div style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between'
-          }}>
-            <div>
-              <h2 style={{
-                fontSize: isMobile ? '20px' : '24px',
-                fontWeight: '700',
-                margin: 0,
-                marginBottom: '4px'
-              }}>
-                {editingPart ? '✏️ Edit Part' : '➕ Add New Part'}
-              </h2>
-              <p style={{
-                fontSize: isMobile ? '13px' : '14px',
-                opacity: 0.9,
-                margin: 0
-              }}>
-                {editingPart ? `Editing ${editingPart.name}` : 'Add a new part to inventory'}
-              </p>
-            </div>
-            <button
-              onClick={() => setShowModal(false)}
-              style={{
-                padding: '8px',
-                background: 'rgba(255,255,255,0.15)',
-                border: 'none',
-                borderRadius: '10px',
-                color: 'white',
-                cursor: 'pointer',
-                transition: 'all 0.2s'
-              }}
-            >
-              <svg style={{ width: '20px', height: '20px' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-              </svg>
-            </button>
-          </div>
-        </div>
-
-        <form onSubmit={handleSubmit}>
-          <div style={{
-            padding: isMobile ? '20px' : '24px',
-            maxHeight: 'calc(90vh - 200px)',
-            overflowY: 'auto'
-          }}>
-            <div style={{
-              display: 'grid',
-              gridTemplateColumns: isMobile ? '1fr' : 'repeat(2, 1fr)',
-              gap: '16px'
-            }}>
-              <FormInput
-                label="Part Number"
-                name="partNumber"
-                value={formData.partNumber}
-                onChange={handleChange}
-                placeholder="e.g., OIL-5W30-001"
-                required
-                disabled={!!editingPart}
-                style={{ textTransform: 'uppercase' }}
-              />
-
-              <FormInput
-                label="Part Name"
-                name="name"
-                value={formData.name}
-                onChange={handleChange}
-                placeholder="e.g., Engine Oil 5W-30"
-                required
-              />
-
-              <div>
-                <label style={{
-                  display: 'block',
-                  fontSize: '14px',
-                  fontWeight: '600',
-                  color: '#374151',
-                  marginBottom: '8px'
-                }}>
-                  Category <span style={{ color: '#ef4444' }}>*</span>
-                </label>
-                <select
-                  name="category"
-                  value={formData.category}
-                  onChange={handleChange}
-                  required
-                  style={{
-                    width: '100%',
-                    padding: '12px 16px',
-                    border: '2px solid #e5e7eb',
-                    borderRadius: '12px',
-                    fontSize: '15px',
-                    background: 'white',
-                    cursor: 'pointer',
-                    outline: 'none',
-                    transition: 'all 0.2s'
-                  }}
-                  onFocus={(e) => e.target.style.borderColor = '#14b8a6'}
-                  onBlur={(e) => e.target.style.borderColor = '#e5e7eb'}
-                >
-                  {categories.map(cat => (
-                    <option key={cat.value} value={cat.value}>
-                      {cat.icon} {cat.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <FormInput
-                label="Brand"
-                name="brand"
-                value={formData.brand}
-                onChange={handleChange}
-                placeholder="e.g., Castrol"
-              />
-
-              <FormInput
-                label="Cost Price (₹)"
-                name="costPrice"
-                type="number"
-                value={formData.costPrice}
-                onChange={handleChange}
-                placeholder="0.00"
-                required
-                min="0"
-                step="0.01"
-              />
-
-              <FormInput
-                label="Selling Price (₹)"
-                name="sellingPrice"
-                type="number"
-                value={formData.sellingPrice}
-                onChange={handleChange}
-                placeholder="0.00"
-                required
-                min="0"
-                step="0.01"
-              />
-
-              <FormInput
-                label="Quantity"
-                name="quantity"
-                type="number"
-                value={formData.quantity}
-                onChange={handleChange}
-                placeholder="0"
-                required
-                min="0"
-              />
-
-              <FormInput
-                label="Min Stock Level"
-                name="minStockLevel"
-                type="number"
-                value={formData.minStockLevel}
-                onChange={handleChange}
-                placeholder="5"
-                min="0"
-              />
-
-              <FormInput
-                label="Location"
-                name="location"
-                value={formData.location}
-                onChange={handleChange}
-                placeholder="e.g., Shelf A-1"
-              />
-
-              <FormInput
-                label="Supplier"
-                name="supplier"
-                value={formData.supplier}
-                onChange={handleChange}
-                placeholder="Supplier name"
-              />
-            </div>
-
-            <div style={{ marginTop: '16px' }}>
-              <label style={{
-                display: 'block',
-                fontSize: '14px',
-                fontWeight: '600',
-                color: '#374151',
-                marginBottom: '8px'
-              }}>
-                Description
-              </label>
-              <textarea
-                name="description"
-                value={formData.description}
-                onChange={handleChange}
-                rows={3}
-                placeholder="Part description..."
-                style={{
-                  width: '100%',
-                  padding: '12px 16px',
-                  border: '2px solid #e5e7eb',
-                  borderRadius: '12px',
-                  fontSize: '15px',
-                  resize: 'none',
-                  outline: 'none',
-                  transition: 'all 0.2s'
-                }}
-                onFocus={(e) => e.target.style.borderColor = '#14b8a6'}
-                onBlur={(e) => e.target.style.borderColor = '#e5e7eb'}
-              />
-            </div>
-
-            {currentUser?.role === 'SUPER_ADMIN' && branches.length > 0 && !editingPart && (
-              <div style={{ marginTop: '16px' }}>
-                <label style={{
-                  display: 'block',
-                  fontSize: '14px',
-                  fontWeight: '600',
-                  color: '#374151',
-                  marginBottom: '8px'
-                }}>
-                  Branch
-                </label>
-                <select
-                  name="branchId"
-                  value={formData.branchId}
-                  onChange={handleChange}
-                  style={{
-                    width: '100%',
-                    padding: '12px 16px',
-                    border: '2px solid #e5e7eb',
-                    borderRadius: '12px',
-                    fontSize: '15px',
-                    background: 'white',
-                    cursor: 'pointer',
-                    outline: 'none'
-                  }}
-                >
-                  <option value="">Select Branch</option>
-                  {branches.map(branch => (
-                    <option key={branch.id} value={branch.id}>
-                      {branch.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            )}
-
-            {formData.costPrice && formData.sellingPrice && (
-              <div style={{
-                marginTop: '20px',
-                background: '#f0fdf4',
-                borderRadius: '12px',
-                padding: '16px',
-                border: '1px solid #bbf7d0'
-              }}>
-                <div style={{
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'center'
-                }}>
-                  <span style={{
-                    fontWeight: '600',
-                    color: '#15803d'
-                  }}>💰 Profit Margin</span>
-                  <span style={{
-                    fontWeight: '700',
-                    fontSize: '18px',
-                    color: '#15803d'
-                  }}>
-                    ₹{(Number(formData.sellingPrice) - Number(formData.costPrice)).toFixed(2)}
-                    <span style={{
-                      fontSize: '14px',
-                      fontWeight: '500',
-                      marginLeft: '8px'
-                    }}>
-                      ({Number(formData.costPrice) > 0 ? (((Number(formData.sellingPrice) - Number(formData.costPrice)) / Number(formData.costPrice)) * 100).toFixed(1) : 0}%)
-                    </span>
-                  </span>
-                </div>
-              </div>
-            )}
-          </div>
-
-          <div style={{
-            padding: isMobile ? '16px 20px' : '20px 24px',
-            borderTop: '1px solid #e5e7eb',
-            display: 'flex',
-            gap: '12px',
-            justifyContent: 'flex-end',
-            background: '#f9fafb'
-          }}>
-            <button
-              type="button"
-              onClick={() => setShowModal(false)}
-              disabled={submitting}
-              style={{
-                padding: '12px 24px',
-                border: '2px solid #e5e7eb',
-                borderRadius: '12px',
-                background: 'white',
-                color: '#374151',
-                fontWeight: '600',
-                fontSize: '15px',
-                cursor: submitting ? 'not-allowed' : 'pointer',
-                opacity: submitting ? 0.5 : 1,
-                transition: 'all 0.2s'
-              }}
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={submitting}
-              style={{
-                padding: '12px 24px',
-                border: 'none',
-                borderRadius: '12px',
-                background: 'linear-gradient(135deg, #14b8a6 0%, #0891b2 100%)',
-                color: 'white',
-                fontWeight: '600',
-                fontSize: '15px',
-                cursor: submitting ? 'not-allowed' : 'pointer',
-                opacity: submitting ? 0.7 : 1,
-                display: 'flex',
-                alignItems: 'center',
-                gap: '8px',
-                boxShadow: '0 4px 12px rgba(20, 184, 166, 0.3)',
-                transition: 'all 0.2s'
-              }}
-            >
-              {submitting && (
-                <div style={{
-                  width: '18px',
-                  height: '18px',
-                  border: '2px solid rgba(255,255,255,0.3)',
-                  borderTopColor: 'white',
-                  borderRadius: '50%',
-                  animation: 'spin 1s linear infinite'
-                }} />
-              )}
-              {editingPart ? 'Update Part' : 'Add Part'}
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>
-  );
-}
-
-function FormInput({ 
-  label, 
-  name, 
-  type = 'text', 
-  value, 
-  onChange, 
-  placeholder, 
-  required = false,
-  disabled = false,
-  min,
-  step,
-  style = {}
-}) {
+function FInput({ label, name, type = 'text', value, onChange, placeholder, required, disabled, min, step, style = {} }) {
   return (
     <div>
-      <label style={{
-        display: 'block',
-        fontSize: '14px',
-        fontWeight: '600',
-        color: '#374151',
-        marginBottom: '8px'
-      }}>
-        {label} {required && <span style={{ color: '#ef4444' }}>*</span>}
-      </label>
-      <input
-        type={type}
-        name={name}
-        value={value}
-        onChange={onChange}
-        placeholder={placeholder}
-        required={required}
-        disabled={disabled}
-        min={min}
-        step={step}
-        style={{
-          width: '100%',
-          padding: '12px 16px',
-          border: '2px solid #e5e7eb',
-          borderRadius: '12px',
-          fontSize: '15px',
-          outline: 'none',
-          transition: 'all 0.2s',
-          background: disabled ? '#f3f4f6' : 'white',
-          color: disabled ? '#9ca3af' : '#1f2937',
-          cursor: disabled ? 'not-allowed' : 'text',
-          ...style
-        }}
-        onFocus={(e) => !disabled && (e.target.style.borderColor = '#14b8a6')}
-        onBlur={(e) => !disabled && (e.target.style.borderColor = '#e5e7eb')}
-      />
+      <label className="iv-label">{label} {required && <span style={{ color: '#14b8a6' }}>*</span>}</label>
+      <input className="iv-input" type={type} name={name} value={value} onChange={onChange}
+        placeholder={placeholder} required={required} disabled={disabled}
+        min={min} step={step} style={style} />
     </div>
   );
 }
 
-function StockAdjustModal({
-  showAdjustModal,
-  setShowAdjustModal,
-  selectedPart,
-  adjustmentData,
-  setAdjustmentData,
-  handleAdjustStock,
-  submitting,
-  isMobile
-}) {
-  if (!showAdjustModal || !selectedPart) return null;
-
+function TblBtn({ onClick, icon, tip, hc }) {
+  const [h, setH] = useState(false);
   return (
-    <div 
-      style={{
-        position: 'fixed',
-        top: 0,
-        left: 0,
-        right: 0,
-        bottom: 0,
-        background: 'rgba(0,0,0,0.5)',
-        backdropFilter: 'blur(4px)',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        zIndex: 50,
-        padding: isMobile ? '16px' : '24px'
-      }}
-      onClick={() => setShowAdjustModal(false)}
-    >
-      <div 
-        style={{
-          background: 'white',
-          borderRadius: isMobile ? '20px' : '24px',
-          boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)',
-          width: '100%',
-          maxWidth: '480px',
-          overflow: 'hidden',
-          animation: 'slideUp 0.3s ease-out'
-        }}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div style={{
-          background: 'linear-gradient(135deg, #14b8a6 0%, #0891b2 100%)',
-          padding: isMobile ? '20px' : '24px',
-          color: 'white'
-        }}>
-          <h2 style={{
-            fontSize: isMobile ? '20px' : '24px',
-            fontWeight: '700',
-            margin: 0,
-            marginBottom: '4px'
-          }}>
-            📦 Adjust Stock
-          </h2>
-          <p style={{
-            fontSize: isMobile ? '13px' : '14px',
-            opacity: 0.9,
-            margin: 0
-          }}>
-            {selectedPart.name} • Current: {selectedPart.quantity}
-          </p>
-        </div>
-
-        <form onSubmit={handleAdjustStock}>
-          <div style={{ padding: isMobile ? '20px' : '24px' }}>
-            <div style={{ marginBottom: '20px' }}>
-              <label style={{
-                display: 'block',
-                fontSize: '14px',
-                fontWeight: '600',
-                color: '#374151',
-                marginBottom: '12px'
-              }}>
-                Adjustment Type
-              </label>
-              <div style={{
-                display: 'grid',
-                gridTemplateColumns: '1fr 1fr',
-                gap: '12px'
-              }}>
-                <label style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: '8px',
-                  padding: '16px',
-                  border: `2px solid ${adjustmentData.type === 'add' ? '#10b981' : '#e5e7eb'}`,
-                  borderRadius: '12px',
-                  cursor: 'pointer',
-                  background: adjustmentData.type === 'add' ? '#f0fdf4' : 'white',
-                  transition: 'all 0.2s'
-                }}>
-                  <input
-                    type="radio"
-                    name="type"
-                    value="add"
-                    checked={adjustmentData.type === 'add'}
-                    onChange={(e) => setAdjustmentData(prev => ({ ...prev, type: e.target.value }))}
-                    style={{ display: 'none' }}
-                  />
-                  <span style={{ fontSize: '20px' }}>➕</span>
-                  <span style={{ fontWeight: '600', color: adjustmentData.type === 'add' ? '#059669' : '#374151' }}>
-                    Add Stock
-                  </span>
-                </label>
-                <label style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: '8px',
-                  padding: '16px',
-                  border: `2px solid ${adjustmentData.type === 'subtract' ? '#ef4444' : '#e5e7eb'}`,
-                  borderRadius: '12px',
-                  cursor: 'pointer',
-                  background: adjustmentData.type === 'subtract' ? '#fef2f2' : 'white',
-                  transition: 'all 0.2s'
-                }}>
-                  <input
-                    type="radio"
-                    name="type"
-                    value="subtract"
-                    checked={adjustmentData.type === 'subtract'}
-                    onChange={(e) => setAdjustmentData(prev => ({ ...prev, type: e.target.value }))}
-                    style={{ display: 'none' }}
-                  />
-                  <span style={{ fontSize: '20px' }}>➖</span>
-                  <span style={{ fontWeight: '600', color: adjustmentData.type === 'subtract' ? '#dc2626' : '#374151' }}>
-                    Remove Stock
-                  </span>
-                </label>
-              </div>
-            </div>
-
-            <div style={{ marginBottom: '20px' }}>
-              <label style={{
-                display: 'block',
-                fontSize: '14px',
-                fontWeight: '600',
-                color: '#374151',
-                marginBottom: '8px'
-              }}>
-                Quantity <span style={{ color: '#ef4444' }}>*</span>
-              </label>
-              <input
-                type="number"
-                value={adjustmentData.quantity}
-                onChange={(e) => setAdjustmentData(prev => ({ ...prev, quantity: e.target.value }))}
-                placeholder="Enter quantity"
-                min="1"
-                max={adjustmentData.type === 'subtract' ? selectedPart.quantity : undefined}
-                required
-                style={{
-                  width: '100%',
-                  padding: '12px 16px',
-                  border: '2px solid #e5e7eb',
-                  borderRadius: '12px',
-                  fontSize: '16px',
-                  outline: 'none',
-                  transition: 'all 0.2s'
-                }}
-                onFocus={(e) => e.target.style.borderColor = '#14b8a6'}
-                onBlur={(e) => e.target.style.borderColor = '#e5e7eb'}
-              />
-            </div>
-
-            {adjustmentData.quantity && (
-              <div style={{
-                borderRadius: '12px',
-                padding: '16px',
-                background: adjustmentData.type === 'add' ? '#f0fdf4' : '#fef2f2',
-                border: `1px solid ${adjustmentData.type === 'add' ? '#bbf7d0' : '#fecaca'}`
-              }}>
-                <div style={{
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'center'
-                }}>
-                  <span style={{
-                    fontWeight: '600',
-                    color: adjustmentData.type === 'add' ? '#15803d' : '#b91c1c'
-                  }}>New Stock Level</span>
-                  <span style={{
-                    fontWeight: '700',
-                    fontSize: '24px',
-                    color: adjustmentData.type === 'add' ? '#15803d' : '#b91c1c'
-                  }}>
-                    {adjustmentData.type === 'add' 
-                      ? selectedPart.quantity + Number(adjustmentData.quantity)
-                      : selectedPart.quantity - Number(adjustmentData.quantity)
-                    }
-                  </span>
-                </div>
-              </div>
-            )}
-          </div>
-
-          <div style={{
-            padding: isMobile ? '16px 20px' : '20px 24px',
-            borderTop: '1px solid #e5e7eb',
-            display: 'flex',
-            gap: '12px',
-            justifyContent: 'flex-end',
-            background: '#f9fafb'
-          }}>
-            <button
-              type="button"
-              onClick={() => setShowAdjustModal(false)}
-              disabled={submitting}
-              style={{
-                padding: '12px 24px',
-                border: '2px solid #e5e7eb',
-                borderRadius: '12px',
-                background: 'white',
-                color: '#374151',
-                fontWeight: '600',
-                fontSize: '15px',
-                cursor: submitting ? 'not-allowed' : 'pointer',
-                opacity: submitting ? 0.5 : 1
-              }}
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={submitting}
-              style={{
-                padding: '12px 24px',
-                border: 'none',
-                borderRadius: '12px',
-                background: adjustmentData.type === 'add'
-                  ? 'linear-gradient(135deg, #10b981 0%, #059669 100%)'
-                  : 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)',
-                color: 'white',
-                fontWeight: '600',
-                fontSize: '15px',
-                cursor: submitting ? 'not-allowed' : 'pointer',
-                opacity: submitting ? 0.7 : 1,
-                display: 'flex',
-                alignItems: 'center',
-                gap: '8px'
-              }}
-            >
-              {submitting && (
-                <div style={{
-                  width: '18px',
-                  height: '18px',
-                  border: '2px solid rgba(255,255,255,0.3)',
-                  borderTopColor: 'white',
-                  borderRadius: '50%',
-                  animation: 'spin 1s linear infinite'
-                }} />
-              )}
-              {adjustmentData.type === 'add' ? 'Add Stock' : 'Remove Stock'}
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>
+    <button onClick={onClick} onMouseEnter={() => setH(true)} onMouseLeave={() => setH(false)}
+      title={tip} style={{
+        width: 32, height: 32, borderRadius: 8, border: 'none',
+        background: h ? `${hc}18` : 'transparent',
+        cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
+        fontSize: 14, transition: 'all .2s',
+        transform: h ? 'scale(1.1)' : 'scale(1)',
+      }}>{icon}</button>
   );
 }
 
-function PartDetailModal({
-  showDetailModal,
-  setShowDetailModal,
-  selectedPart,
-  getCategoryIcon,
-  canManageInventory,
-  openAdjustModal,
-  openEditModal,
-  isMobile,
-  isEmployee
-}) {
-  if (!showDetailModal || !selectedPart) return null;
-
+function MiniStat({ label, value, color }) {
   return (
-    <div 
-      style={{
-        position: 'fixed',
-        top: 0,
-        left: 0,
-        right: 0,
-        bottom: 0,
-        background: 'rgba(0,0,0,0.5)',
-        backdropFilter: 'blur(4px)',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        zIndex: 50,
-        padding: isMobile ? '16px' : '24px'
-      }}
-      onClick={() => setShowDetailModal(false)}
-    >
-      <div 
-        style={{
-          background: 'white',
-          borderRadius: isMobile ? '20px' : '24px',
-          boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)',
-          width: '100%',
-          maxWidth: '560px',
-          maxHeight: '90vh',
-          overflow: 'hidden',
-          animation: 'slideUp 0.3s ease-out'
-        }}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div style={{
-          background: 'linear-gradient(135deg, #14b8a6 0%, #0891b2 100%)',
-          padding: isMobile ? '24px' : '28px'
-        }}>
-          <div style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: '16px'
-          }}>
-            <div style={{
-              width: '64px',
-              height: '64px',
-              background: 'rgba(255,255,255,0.2)',
-              borderRadius: '16px',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              fontSize: '32px'
-            }}>
-              {getCategoryIcon(selectedPart.category)}
-            </div>
-            <div style={{ flex: 1 }}>
-              <h2 style={{
-                fontSize: isMobile ? '22px' : '26px',
-                fontWeight: '700',
-                color: 'white',
-                margin: 0,
-                marginBottom: '4px'
-              }}>
-                {selectedPart.name}
-              </h2>
-              <p style={{
-                fontSize: '14px',
-                color: 'rgba(255,255,255,0.85)',
-                margin: 0,
-                fontFamily: 'monospace'
-              }}>
-                {selectedPart.partNumber}
-              </p>
-            </div>
-          </div>
-        </div>
-
-        <div style={{
-          padding: isMobile ? '20px' : '24px',
-          maxHeight: 'calc(90vh - 280px)',
-          overflowY: 'auto'
-        }}>
-          <div style={{
-            display: 'grid',
-            gridTemplateColumns: 'repeat(2, 1fr)',
-            gap: '12px',
-            marginBottom: '24px'
-          }}>
-            <div style={{
-              textAlign: 'center',
-              padding: '16px',
-              background: '#f8fafc',
-              borderRadius: '12px'
-            }}>
-              <p style={{
-                fontSize: '28px',
-                fontWeight: '700',
-                color: selectedPart.quantity === 0 ? '#ef4444' : selectedPart.quantity <= selectedPart.minStockLevel ? '#f59e0b' : '#1e293b',
-                margin: 0,
-                marginBottom: '4px'
-              }}>{selectedPart.quantity}</p>
-              <p style={{
-                fontSize: '13px',
-                color: '#64748b',
-                margin: 0
-              }}>In Stock</p>
-            </div>
-            {!isEmployee ? (
-              <div style={{
-                textAlign: 'center',
-                padding: '16px',
-                background: '#f0fdf4',
-                borderRadius: '12px'
-              }}>
-                <p style={{
-                  fontSize: '26px',
-                  fontWeight: '700',
-                  color: '#059669',
-                  margin: 0,
-                  marginBottom: '4px'
-                }}>₹{selectedPart.sellingPrice.toLocaleString('en-IN')}</p>
-                <p style={{
-                  fontSize: '13px',
-                  color: '#64748b',
-                  margin: 0
-                }}>Selling Price</p>
-              </div>
-            ) : (
-              <div style={{
-                textAlign: 'center',
-                padding: '16px',
-                background: '#eff6ff',
-                borderRadius: '12px'
-              }}>
-                <p style={{
-                  fontSize: '26px',
-                  fontWeight: '700',
-                  color: '#3b82f6',
-                  margin: 0,
-                  marginBottom: '4px'
-                }}>{selectedPart.minStockLevel}</p>
-                <p style={{
-                  fontSize: '13px',
-                  color: '#64748b',
-                  margin: 0
-                }}>Min Level</p>
-              </div>
-            )}
-          </div>
-
-          <div style={{
-            background: '#f8fafc',
-            borderRadius: '12px',
-            overflow: 'hidden'
-          }}>
-            <DetailRow label="Category" value={selectedPart.category} />
-            <DetailRow label="Brand" value={selectedPart.brand || '—'} />
-            {!isEmployee && (
-              <DetailRow label="Cost Price" value={`₹${selectedPart.costPrice.toLocaleString('en-IN')}`} />
-            )}
-            <DetailRow label="Min Stock Level" value={selectedPart.minStockLevel} />
-            <DetailRow label="Location" value={selectedPart.location || '—'} />
-            {!isEmployee && (
-              <DetailRow label="Supplier" value={selectedPart.supplier || '—'} />
-            )}
-            <DetailRow label="Branch" value={selectedPart.branch?.name || '—'} />
-            <DetailRow label="Times Used" value={`${selectedPart._count?.jobs || 0} jobs`} isLast />
-          </div>
-
-          {selectedPart.description && (
-            <div style={{
-              marginTop: '20px',
-              padding: '16px',
-              background: '#f8fafc',
-              borderRadius: '12px'
-            }}>
-              <p style={{
-                fontSize: '13px',
-                color: '#64748b',
-                margin: 0,
-                marginBottom: '4px',
-                fontWeight: '600'
-              }}>Description</p>
-              <p style={{
-                fontSize: '14px',
-                color: '#374151',
-                margin: 0,
-                lineHeight: 1.6
-              }}>{selectedPart.description}</p>
-            </div>
-          )}
-        </div>
-
-        <div style={{
-          padding: isMobile ? '16px 20px' : '20px 24px',
-          borderTop: '1px solid #e5e7eb',
-          display: 'flex',
-          gap: '12px',
-          justifyContent: 'flex-end',
-          background: '#f9fafb',
-          flexWrap: 'wrap'
-        }}>
-          <button
-            onClick={() => setShowDetailModal(false)}
-            style={{
-              padding: '12px 24px',
-              border: '2px solid #e5e7eb',
-              borderRadius: '12px',
-              background: 'white',
-              color: '#374151',
-              fontWeight: '600',
-              fontSize: '15px',
-              cursor: 'pointer'
-            }}
-          >
-            Close
-          </button>
-          {canManageInventory && (
-            <>
-              <button
-                onClick={() => {
-                  setShowDetailModal(false);
-                  openAdjustModal(selectedPart);
-                }}
-                style={{
-                  padding: '12px 24px',
-                  border: 'none',
-                  borderRadius: '12px',
-                  background: 'linear-gradient(135deg, #14b8a6 0%, #0891b2 100%)',
-                  color: 'white',
-                  fontWeight: '600',
-                  fontSize: '15px',
-                  cursor: 'pointer'
-                }}
-              >
-                Adjust Stock
-              </button>
-              <button
-                onClick={() => {
-                  setShowDetailModal(false);
-                  openEditModal(selectedPart);
-                }}
-                style={{
-                  padding: '12px 24px',
-                  border: 'none',
-                  borderRadius: '12px',
-                  background: 'linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%)',
-                  color: 'white',
-                  fontWeight: '600',
-                  fontSize: '15px',
-                  cursor: 'pointer'
-                }}
-              >
-                Edit
-              </button>
-            </>
-          )}
-        </div>
-      </div>
+    <div style={{ textAlign: 'center', padding: '8px 4px', borderRadius: 10, background: 'rgba(255,255,255,.03)', border: '1px solid rgba(255,255,255,.05)' }}>
+      <p style={{ margin: 0, fontSize: 16, fontWeight: 800, color }}>{value}</p>
+      <p style={{ margin: '1px 0 0', fontSize: 9, color: 'rgba(255,255,255,.35)', fontWeight: 600 }}>{label}</p>
     </div>
   );
 }
 
-function DetailRow({ label, value, isLast = false }) {
+function MiniStatBox({ label, value, color }) {
+  return (
+    <div style={{ textAlign: 'center', padding: 14, borderRadius: 12, background: 'rgba(255,255,255,.03)', border: '1px solid rgba(255,255,255,.05)' }}>
+      <p style={{ margin: '0 0 3px', fontSize: 24, fontWeight: 800, color }}>{value}</p>
+      <p style={{ margin: 0, fontSize: 11, color: 'rgba(255,255,255,.35)', fontWeight: 600 }}>{label}</p>
+    </div>
+  );
+}
+
+function DRow({ label, value, last }) {
   return (
     <div style={{
-      display: 'flex',
-      justifyContent: 'space-between',
-      padding: '12px 16px',
-      borderBottom: isLast ? 'none' : '1px solid #e2e8f0'
+      display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+      padding: '10px 14px',
+      borderBottom: last ? 'none' : '1px solid rgba(255,255,255,.05)',
+      background: 'rgba(255,255,255,.02)',
     }}>
-      <span style={{
-        fontSize: '14px',
-        color: '#64748b'
-      }}>{label}</span>
-      <span style={{
-        fontSize: '14px',
-        fontWeight: '600',
-        color: '#1e293b'
-      }}>{value}</span>
+      <span style={{ fontSize: 12, color: 'rgba(255,255,255,.4)' }}>{label}</span>
+      <span style={{ fontSize: 13, fontWeight: 700, color: 'white' }}>{value}</span>
     </div>
   );
 }

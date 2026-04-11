@@ -1,296 +1,921 @@
 // src/app/(dashboard)/dashboard/page.js
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import ActivityFeed from '../../../components/ActivityFeed';
 
-// Global styles component
+// ============================================================
+// GLOBAL STYLES
+// ============================================================
 function GlobalStyles() {
   return (
     <style jsx global>{`
+      * { box-sizing: border-box; }
+
       @keyframes rotate {
         from { transform: rotate(0deg); }
         to { transform: rotate(360deg); }
       }
-      
       @keyframes fadeInDown {
-        from {
-          opacity: 0;
-          transform: translateY(-20px);
-        }
-        to {
-          opacity: 1;
-          transform: translateY(0);
-        }
+        from { opacity: 0; transform: translateY(-24px); }
+        to { opacity: 1; transform: translateY(0); }
       }
-      
       @keyframes fadeInUp {
-        from {
-          opacity: 0;
-          transform: translateY(10px);
-        }
-        to {
-          opacity: 1;
-          transform: translateY(0);
-        }
+        from { opacity: 0; transform: translateY(16px); }
+        to { opacity: 1; transform: translateY(0); }
       }
-      
+      @keyframes fadeInLeft {
+        from { opacity: 0; transform: translateX(-20px); }
+        to { opacity: 1; transform: translateX(0); }
+      }
+      @keyframes fadeInRight {
+        from { opacity: 0; transform: translateX(20px); }
+        to { opacity: 1; transform: translateX(0); }
+      }
       @keyframes scaleIn {
-        from {
-          opacity: 0;
-          transform: scale(0.9);
-        }
-        to {
-          opacity: 1;
-          transform: scale(1);
-        }
+        from { opacity: 0; transform: scale(0.88); }
+        to { opacity: 1; transform: scale(1); }
       }
-
+      @keyframes slideInCard {
+        from { opacity: 0; transform: translateY(30px) scale(0.96); }
+        to { opacity: 1; transform: translateY(0) scale(1); }
+      }
       @keyframes float {
         0%, 100% { transform: translateY(0px); }
-        50% { transform: translateY(-10px); }
+        50% { transform: translateY(-8px); }
+      }
+      @keyframes pulse-ring {
+        0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(102,126,234,0.4); }
+        70% { transform: scale(1); box-shadow: 0 0 0 12px rgba(102,126,234,0); }
+        100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(102,126,234,0); }
+      }
+      @keyframes shimmer {
+        0% { background-position: -1000px 0; }
+        100% { background-position: 1000px 0; }
+      }
+      @keyframes gradient-x {
+        0%, 100% { background-position: 0% 50%; }
+        50% { background-position: 100% 50%; }
+      }
+      @keyframes counter-up {
+        from { opacity: 0; transform: translateY(10px); }
+        to { opacity: 1; transform: translateY(0); }
+      }
+      @keyframes progress-fill {
+        from { width: 0%; }
+        to { width: var(--target-width); }
+      }
+      @keyframes ping {
+        75%, 100% { transform: scale(2); opacity: 0; }
+      }
+      @keyframes orbit {
+        from { transform: rotate(0deg) translateX(28px) rotate(0deg); }
+        to { transform: rotate(360deg) translateX(28px) rotate(-360deg); }
+      }
+      @keyframes wave {
+        0%, 100% { transform: scaleY(0.5); }
+        50% { transform: scaleY(1.2); }
+      }
+
+      .dashboard-bg {
+        min-height: 100vh;
+        background: linear-gradient(135deg, #0f172a 0%, #1e1b4b 35%, #1e3a5f 65%, #0f172a 100%);
+        background-size: 400% 400%;
+        animation: gradient-x 15s ease infinite;
+      }
+
+      .glass-card {
+        background: rgba(255, 255, 255, 0.04);
+        backdrop-filter: blur(20px);
+        -webkit-backdrop-filter: blur(20px);
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        border-radius: 24px;
+        transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+      }
+      .glass-card:hover {
+        background: rgba(255, 255, 255, 0.07);
+        border-color: rgba(255, 255, 255, 0.14);
+        box-shadow: 0 24px 48px rgba(0, 0, 0, 0.3), 0 0 0 1px rgba(255,255,255,0.06);
+        transform: translateY(-4px);
+      }
+
+      .stat-card {
+        position: relative;
+        overflow: hidden;
+        cursor: pointer;
+        transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+      }
+      .stat-card::before {
+        content: '';
+        position: absolute;
+        inset: 0;
+        background: linear-gradient(135deg, rgba(255,255,255,0.06) 0%, transparent 60%);
+        opacity: 0;
+        transition: opacity 0.4s ease;
+        border-radius: inherit;
+      }
+      .stat-card:hover::before { opacity: 1; }
+      .stat-card:hover {
+        transform: translateY(-8px) scale(1.02);
+        box-shadow: 0 32px 64px rgba(0, 0, 0, 0.4), 0 0 0 1px rgba(255,255,255,0.1);
+      }
+      .stat-card:active { transform: translateY(-4px) scale(0.99); }
+
+      .shimmer-loading {
+        background: linear-gradient(90deg, 
+          rgba(255,255,255,0.03) 25%, 
+          rgba(255,255,255,0.08) 50%, 
+          rgba(255,255,255,0.03) 75%
+        );
+        background-size: 1000px 100%;
+        animation: shimmer 2s infinite;
+      }
+
+      .quick-action-btn {
+        transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        position: relative;
+        overflow: hidden;
+      }
+      .quick-action-btn::after {
+        content: '';
+        position: absolute;
+        left: -100%;
+        top: 0;
+        width: 100%;
+        height: 100%;
+        background: linear-gradient(90deg, transparent, rgba(255,255,255,0.04), transparent);
+        transition: left 0.5s ease;
+      }
+      .quick-action-btn:hover::after { left: 100%; }
+      .quick-action-btn:hover {
+        background: rgba(255,255,255,0.06) !important;
+        border-color: rgba(102,126,234,0.4) !important;
+        transform: translateX(6px);
+        box-shadow: 0 8px 24px rgba(0,0,0,0.2);
+      }
+      .quick-action-btn:active { transform: translateX(3px) scale(0.99); }
+
+      .progress-bar {
+        animation: progress-fill 1.5s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+        animation-delay: 0.5s;
       }
 
       .content-grid {
         display: grid;
-        gap: clamp(16px, 3vw, 24px);
+        gap: clamp(16px, 2.5vw, 24px);
       }
-
-      .cashier-grid {
-        display: grid;
-        gap: clamp(16px, 3vw, 24px);
-      }
-
       @media (min-width: 1024px) {
-        .content-grid {
-          grid-template-columns: 2fr 1fr;
-        }
-        .cashier-grid {
-          grid-template-columns: 1fr 2fr;
-        }
+        .content-grid { grid-template-columns: 2fr 1fr; }
+        .cashier-grid { grid-template-columns: 1fr 2fr; }
       }
 
-      .container {
-        padding: clamp(16px, 3vw, 32px);
+      .stats-grid {
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        gap: clamp(12px, 2vw, 20px);
+      }
+      @media (min-width: 768px) {
+        .stats-grid { grid-template-columns: repeat(4, 1fr); }
+      }
+
+      .header-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 4px 12px;
+        border-radius: 100px;
+        font-size: 11px;
+        font-weight: 600;
+        letter-spacing: 0.5px;
+        text-transform: uppercase;
+      }
+
+      ::-webkit-scrollbar { width: 5px; height: 5px; }
+      ::-webkit-scrollbar-track { background: rgba(255,255,255,0.03); }
+      ::-webkit-scrollbar-thumb { 
+        background: rgba(102,126,234,0.3); 
+        border-radius: 3px; 
+      }
+      ::-webkit-scrollbar-thumb:hover { 
+        background: rgba(102,126,234,0.5); 
+      }
+
+      @media (max-width: 640px) {
+        .glass-card:hover { transform: none; }
+        .stat-card:hover { transform: none; }
+        .quick-action-btn:hover { transform: none; }
       }
     `}</style>
   );
 }
 
-export default function DashboardPage() {
-  const [user, setUser] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [stats, setStats] = useState({});
-  const [isMobile, setIsMobile] = useState(false);
-  const router = useRouter();
+// ============================================================
+// ANIMATED BACKGROUND
+// ============================================================
+function AnimatedBackground() {
+  const canvasRef = useRef(null);
 
   useEffect(() => {
-    const checkMobile = () => {
-      setIsMobile(window.innerWidth < 768);
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    let animId;
+    let particles = [];
+
+    const resize = () => {
+      canvas.width = window.innerWidth;
+      canvas.height = window.innerHeight;
     };
-    
-    checkMobile();
-    window.addEventListener('resize', checkMobile);
-    return () => window.removeEventListener('resize', checkMobile);
+    resize();
+    window.addEventListener('resize', resize);
+
+    class Dot {
+      constructor() { this.reset(); }
+      reset() {
+        this.x = Math.random() * canvas.width;
+        this.y = Math.random() * canvas.height;
+        this.r = Math.random() * 1.5 + 0.3;
+        this.vx = (Math.random() - 0.5) * 0.4;
+        this.vy = (Math.random() - 0.5) * 0.4;
+        this.alpha = Math.random() * 0.4 + 0.1;
+      }
+      update() {
+        this.x += this.vx;
+        this.y += this.vy;
+        if (this.x < 0 || this.x > canvas.width) this.vx *= -1;
+        if (this.y < 0 || this.y > canvas.height) this.vy *= -1;
+      }
+      draw() {
+        ctx.beginPath();
+        ctx.arc(this.x, this.y, this.r, 0, Math.PI * 2);
+        ctx.fillStyle = `rgba(147, 197, 253, ${this.alpha})`;
+        ctx.fill();
+      }
+    }
+
+    const count = Math.min(60, Math.floor(canvas.width / 25));
+    for (let i = 0; i < count; i++) particles.push(new Dot());
+
+    const draw = () => {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      // connect nearby
+      for (let i = 0; i < particles.length; i++) {
+        for (let j = i + 1; j < particles.length; j++) {
+          const dx = particles[i].x - particles[j].x;
+          const dy = particles[i].y - particles[j].y;
+          const d = Math.sqrt(dx * dx + dy * dy);
+          if (d < 120) {
+            ctx.beginPath();
+            ctx.strokeStyle = `rgba(147,197,253,${0.08 * (1 - d / 120)})`;
+            ctx.lineWidth = 0.5;
+            ctx.moveTo(particles[i].x, particles[i].y);
+            ctx.lineTo(particles[j].x, particles[j].y);
+            ctx.stroke();
+          }
+        }
+        particles[i].update();
+        particles[i].draw();
+      }
+      animId = requestAnimationFrame(draw);
+    };
+    draw();
+
+    return () => {
+      cancelAnimationFrame(animId);
+      window.removeEventListener('resize', resize);
+    };
   }, []);
 
-  useEffect(() => {
-    const userData = localStorage.getItem('user');
-    if (userData) {
-      const parsedUser = JSON.parse(userData);
-      setUser(parsedUser);
-      fetchDashboardData(parsedUser.role);
-    } else {
-      router.push('/login');
-    }
-  }, [router]);
-
-  const fetchDashboardData = async (role) => {
-    try {
-      const response = await fetch(`/api/dashboard?role=${role}`);
-      const data = await response.json();
-      if (data.success) {
-        setStats(data.data);
-      }
-    } catch (error) {
-      console.error('Error fetching dashboard data:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  if (loading) {
-    return (
-      <>
-        <GlobalStyles />
-        <div style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          minHeight: '100vh',
-          background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-          padding: '20px'
-        }}>
-          <div style={{ textAlign: 'center', maxWidth: '300px', width: '100%' }}>
-            <div style={{ 
-              width: 'clamp(48px, 15vw, 64px)',
-              height: 'clamp(48px, 15vw, 64px)',
-              margin: '0 auto',
-              position: 'relative'
-            }}>
-              {[0, 1, 2].map((i) => (
-                <div
-                  key={i}
-                  style={{
-                    position: 'absolute',
-                    width: '100%',
-                    height: '100%',
-                    borderRadius: '50%',
-                    border: 'clamp(3px, 1vw, 4px) solid rgba(255,255,255,0.3)',
-                    borderTopColor: 'white',
-                    animation: `rotate ${1.5 - i * 0.2}s linear infinite`,
-                    animationDelay: `${i * 0.15}s`
-                  }}
-                />
-              ))}
-            </div>
-            <p style={{ 
-              color: 'white', 
-              marginTop: 'clamp(16px, 4vw, 24px)',
-              fontSize: 'clamp(14px, 3vw, 16px)',
-              fontWeight: '500'
-            }}>
-              Loading your dashboard...
-            </p>
-          </div>
-        </div>
-      </>
-    );
-  }
-
   return (
-    <>
-      <GlobalStyles />
-      {(() => {
-        switch (user?.role) {
-          case 'SUPER_ADMIN':
-            return <SuperAdminDashboard user={user} stats={stats} isMobile={isMobile} />;
-          case 'MANAGER':
-            return <ManagerDashboard user={user} stats={stats} isMobile={isMobile} />;
-          case 'EMPLOYEE':
-            return <EmployeeDashboard user={user} stats={stats} isMobile={isMobile} />;
-          case 'CASHIER':
-            return <CashierDashboard user={user} stats={stats} isMobile={isMobile} />;
-          default:
-            return <DefaultDashboard user={user} />;
-        }
-      })()}
-    </>
+    <canvas
+      ref={canvasRef}
+      style={{
+        position: 'fixed', inset: 0,
+        pointerEvents: 'none', zIndex: 0,
+        opacity: 0.6,
+      }}
+    />
   );
 }
 
-function SuperAdminDashboard({ user, stats, isMobile }) {
+// ============================================================
+// ANIMATED COUNTER
+// ============================================================
+function AnimatedCounter({ value, prefix = '', suffix = '' }) {
+  const [display, setDisplay] = useState(0);
+  const [started, setStarted] = useState(false);
+
+  useEffect(() => {
+    const raw = typeof value === 'string'
+      ? parseFloat(value.replace(/[^0-9.]/g, ''))
+      : value;
+    if (isNaN(raw) || raw === 0) { setDisplay(0); return; }
+
+    const timer = setTimeout(() => setStarted(true), 300);
+    return () => clearTimeout(timer);
+  }, [value]);
+
+  useEffect(() => {
+    if (!started) return;
+    const raw = typeof value === 'string'
+      ? parseFloat(value.replace(/[^0-9.]/g, ''))
+      : value;
+    if (isNaN(raw)) return;
+
+    let start = 0;
+    const duration = 1200;
+    const step = 16;
+    const steps = duration / step;
+    const inc = raw / steps;
+    let current = 0;
+
+    const timer = setInterval(() => {
+      current += inc;
+      if (current >= raw) {
+        setDisplay(raw);
+        clearInterval(timer);
+      } else {
+        setDisplay(Math.floor(current));
+      }
+    }, step);
+    return () => clearInterval(timer);
+  }, [started, value]);
+
+  const formatted = display.toLocaleString('en-IN');
+  return <span>{prefix}{formatted}{suffix}</span>;
+}
+
+// ============================================================
+// ROLE BADGE CONFIG
+// ============================================================
+const ROLE_CONFIG = {
+  SUPER_ADMIN: {
+    emoji: '👑', label: 'Super Admin',
+    color: '#f59e0b', bg: 'rgba(245,158,11,0.15)',
+    gradient: 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)',
+  },
+  MANAGER: {
+    emoji: '👔', label: 'Manager',
+    color: '#6366f1', bg: 'rgba(99,102,241,0.15)',
+    gradient: 'linear-gradient(135deg, #6366f1 0%, #4f46e5 100%)',
+  },
+  EMPLOYEE: {
+    emoji: '🔧', label: 'Technician',
+    color: '#3b82f6', bg: 'rgba(59,130,246,0.15)',
+    gradient: 'linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)',
+  },
+  CASHIER: {
+    emoji: '💰', label: 'Cashier',
+    color: '#10b981', bg: 'rgba(16,185,129,0.15)',
+    gradient: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+  },
+};
+
+// ============================================================
+// LOADING SCREEN
+// ============================================================
+function LoadingScreen() {
+  return (
+    <div className="dashboard-bg" style={{
+      display: 'flex', alignItems: 'center',
+      justifyContent: 'center', minHeight: '100vh',
+    }}>
+      <AnimatedBackground />
+      <div style={{ textAlign: 'center', position: 'relative', zIndex: 1 }}>
+        {/* Spinner rings */}
+        <div style={{ width: 72, height: 72, margin: '0 auto', position: 'relative' }}>
+          {[0, 1, 2].map((i) => (
+            <div key={i} style={{
+              position: 'absolute', inset: i * 8,
+              borderRadius: '50%',
+              border: '2px solid transparent',
+              borderTopColor: i === 0 ? '#6366f1' : i === 1 ? '#3b82f6' : '#06b6d4',
+              animation: `rotate ${1.2 - i * 0.2}s linear infinite`,
+            }} />
+          ))}
+          <div style={{
+            position: 'absolute', inset: '50%',
+            transform: 'translate(-50%,-50%)',
+            width: 12, height: 12,
+            borderRadius: '50%',
+            background: 'linear-gradient(135deg,#6366f1,#06b6d4)',
+            animation: 'pulse-ring 1.5s ease infinite',
+          }} />
+        </div>
+
+        {/* Wave bars */}
+        <div style={{ display: 'flex', gap: 4, justifyContent: 'center', marginTop: 24, marginBottom: 16 }}>
+          {[0,1,2,3,4].map(i => (
+            <div key={i} style={{
+              width: 4, height: 24, borderRadius: 2,
+              background: 'linear-gradient(to top,#6366f1,#06b6d4)',
+              animation: `wave 1s ease-in-out infinite`,
+              animationDelay: `${i * 0.12}s`,
+            }} />
+          ))}
+        </div>
+
+        <p style={{
+          color: 'rgba(255,255,255,0.6)',
+          fontSize: 14, fontWeight: 500,
+          letterSpacing: '0.5px',
+        }}>
+          Loading your dashboard...
+        </p>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================
+// DASHBOARD HEADER
+// ============================================================
+function DashboardHeader({ user, stats, isMobile }) {
+  const [time, setTime] = useState(new Date());
+  const role = ROLE_CONFIG[user?.role] || ROLE_CONFIG.EMPLOYEE;
+
+  useEffect(() => {
+    const t = setInterval(() => setTime(new Date()), 1000);
+    return () => clearInterval(t);
+  }, []);
+
+  const hour = time.getHours();
+  const greeting = hour < 12 ? 'Good Morning' : hour < 17 ? 'Good Afternoon' : 'Good Evening';
+  const displayName = isMobile
+    ? user?.name?.split(' ')[0]
+    : user?.name;
+
   return (
     <div style={{
-      minHeight: '100vh',
-      background: 'linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%)',
-      padding: 'clamp(12px, 2vw, 16px)'
+      marginBottom: 'clamp(20px,3vw,32px)',
+      animation: 'fadeInDown 0.7s cubic-bezier(0.4,0,0.2,1)',
     }}>
-      <div className="container">
-        {/* Welcome Header */}
-        <div style={{
-          marginBottom: 'clamp(24px, 4vw, 32px)',
-          animation: 'fadeInDown 0.6s ease-out'
-        }}>
-          <div style={{ 
-            display: 'flex', 
-            alignItems: 'center', 
-            gap: 'clamp(8px, 2vw, 12px)',
-            marginBottom: '8px',
-            flexWrap: 'wrap'
-          }}>
-            <span style={{ 
-              fontSize: isMobile ? '32px' : 'clamp(32px, 6vw, 40px)',
-              filter: 'drop-shadow(0 4px 8px rgba(0,0,0,0.1))'
+      {/* Top row */}
+      <div style={{
+        display: 'flex',
+        alignItems: 'flex-start',
+        justifyContent: 'space-between',
+        gap: 12,
+        flexWrap: 'wrap',
+      }}>
+        {/* Left: avatar + text */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 16, minWidth: 0 }}>
+          {/* Avatar */}
+          <div style={{ position: 'relative', flexShrink: 0 }}>
+            <div style={{
+              width: isMobile ? 48 : 60,
+              height: isMobile ? 48 : 60,
+              borderRadius: '50%',
+              background: role.gradient,
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              fontSize: isMobile ? 22 : 28,
+              boxShadow: `0 0 0 3px rgba(255,255,255,0.1), 0 8px 24px rgba(0,0,0,0.3)`,
+              animation: 'float 4s ease-in-out infinite',
             }}>
-              👑
-            </span>
-            <h1 style={{
-              fontSize: isMobile ? '20px' : 'clamp(24px, 5vw, 32px)',
-              fontWeight: '800',
-              background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-              WebkitBackgroundClip: 'text',
-              WebkitTextFillColor: 'transparent',
-              letterSpacing: '-0.5px',
-              margin: 0
-            }}>
-              Welcome back, {isMobile ? user.name.split(' ')[0] : user.name}!
-            </h1>
-          </div>
-          <p style={{ 
-            color: '#64748b',
-            fontSize: isMobile ? '13px' : 'clamp(14px, 2vw, 16px)',
-            fontWeight: '500',
-            margin: 0
-          }}>
-            Super Admin Dashboard - {isMobile ? 'Overview' : 'Complete system overview'}
-          </p>
-        </div>
-
-        {/* Stats Grid */}
-        <div style={{
-          display: 'grid',
-          gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fit, minmax(min(100%, 220px), 1fr))',
-          gap: 'clamp(12px, 2vw, 16px)',
-          marginBottom: 'clamp(24px, 4vw, 32px)'
-        }}>
-          <StatCard
-            title="Total Revenue"
-            value={`₹${stats.totalRevenue?.toLocaleString() || 0}`}
-            icon="💰"
-            gradient="linear-gradient(135deg, #10b981 0%, #059669 100%)"
-            change="+12.5%"
-            index={0}
-            isMobile={isMobile}
-          />
-          <StatCard
-            title="Active Jobs"
-            value={stats.activeJobs || 0}
-            icon="🔧"
-            gradient="linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%)"
-            change="+5"
-            index={1}
-            isMobile={isMobile}
-          />
-          <StatCard
-            title="Total Customers"
-            value={stats.totalCustomers || 0}
-            icon="👥"
-            gradient="linear-gradient(135deg, #8b5cf6 0%, #6d28d9 100%)"
-            change="+23"
-            index={2}
-            isMobile={isMobile}
-          />
-          <StatCard
-            title="All Branches"
-            value={stats.totalBranches || 0}
-            icon="🏢"
-            gradient="linear-gradient(135deg, #f59e0b 0%, #d97706 100%)"
-            index={3}
-            isMobile={isMobile}
-          />
-        </div>
-
-        {/* Main Content */}
-        <div style={{ marginBottom: 'clamp(16px, 3vw, 24px)' }}>
-          <div className="content-grid">
-            <div style={{ animation: 'scaleIn 0.6s ease-out 0.3s backwards' }}>
-              <ActivityFeed maxHeight={isMobile ? "400px" : "600px"} />
+              {role.emoji}
             </div>
-
-            <QuickActionsCard isMobile={isMobile} />
+            {/* Online dot */}
+            <div style={{
+              position: 'absolute', bottom: 2, right: 2,
+              width: 10, height: 10, borderRadius: '50%',
+              background: '#10b981',
+              border: '2px solid rgba(15,23,42,0.8)',
+            }}>
+              <div style={{
+                position: 'absolute', inset: -2,
+                borderRadius: '50%',
+                background: '#10b981',
+                animation: 'ping 1.5s cubic-bezier(0,0,0.2,1) infinite',
+                opacity: 0.4,
+              }} />
+            </div>
           </div>
+
+          {/* Title */}
+          <div style={{ minWidth: 0 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 4 }}>
+              <span className="header-badge" style={{
+                background: role.bg,
+                color: role.color,
+                border: `1px solid ${role.color}30`,
+              }}>
+                {role.label}
+              </span>
+            </div>
+            <h1 style={{
+              fontSize: isMobile ? '1.25rem' : 'clamp(1.5rem,3vw,2rem)',
+              fontWeight: 800,
+              color: 'white',
+              margin: 0,
+              letterSpacing: '-0.5px',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+            }}>
+              {greeting}, {displayName}! 👋
+            </h1>
+            <p style={{
+              margin: '4px 0 0',
+              color: 'rgba(255,255,255,0.45)',
+              fontSize: isMobile ? 12 : 13,
+              fontWeight: 500,
+            }}>
+              {time.toLocaleDateString('en-IN', {
+                weekday: isMobile ? 'short' : 'long',
+                year: 'numeric', month: 'long', day: 'numeric',
+              })}
+              {' · '}
+              {time.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}
+            </p>
+          </div>
+        </div>
+
+        {/* Right: mini stats */}
+        {!isMobile && (
+          <div style={{
+            display: 'flex', gap: 12, flexShrink: 0,
+            animation: 'fadeInRight 0.7s ease 0.2s backwards',
+          }}>
+            {[
+              { label: 'System', value: 'Online', dot: '#10b981' },
+              { label: 'Session', value: 'Active', dot: '#6366f1' },
+            ].map(item => (
+              <div key={item.label} className="glass-card" style={{
+                padding: '10px 16px', borderRadius: 12,
+                textAlign: 'center', minWidth: 90,
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, marginBottom: 4 }}>
+                  <div style={{ width: 6, height: 6, borderRadius: '50%', background: item.dot }} />
+                  <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.4)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                    {item.label}
+                  </span>
+                </div>
+                <span style={{ fontSize: 13, fontWeight: 700, color: 'white' }}>{item.value}</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Divider */}
+      <div style={{
+        marginTop: 20,
+        height: 1,
+        background: 'linear-gradient(90deg, rgba(99,102,241,0.4), rgba(6,182,212,0.2), transparent)',
+      }} />
+    </div>
+  );
+}
+
+// ============================================================
+// STAT CARD
+// ============================================================
+function StatCard({ title, value, icon, gradient, change, index, isMobile, prefix = '', suffix = '' }) {
+  const [hovered, setHovered] = useState(false);
+
+  // parse raw number for progress
+  const raw = typeof value === 'number' ? value
+    : parseFloat(String(value).replace(/[^0-9.]/g, '')) || 0;
+  const progress = Math.min(100, (raw / (raw * 1.5)) * 100) || 60;
+
+  return (
+    <div
+      className="glass-card stat-card"
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      onTouchStart={() => setHovered(true)}
+      onTouchEnd={() => setTimeout(() => setHovered(false), 300)}
+      style={{
+        padding: isMobile ? '16px' : 'clamp(18px,2.5vw,24px)',
+        animation: `slideInCard 0.6s cubic-bezier(0.4,0,0.2,1) ${index * 0.12}s backwards`,
+        borderRadius: 20,
+      }}
+    >
+      {/* Glow orb */}
+      <div style={{
+        position: 'absolute', top: -30, right: -30,
+        width: 100, height: 100,
+        borderRadius: '50%',
+        background: gradient,
+        opacity: hovered ? 0.18 : 0.08,
+        filter: 'blur(20px)',
+        transition: 'opacity 0.4s ease',
+        pointerEvents: 'none',
+      }} />
+
+      {/* Top row */}
+      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 }}>
+        {/* Text */}
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <p style={{
+            fontSize: 10, fontWeight: 700,
+            color: 'rgba(255,255,255,0.45)',
+            textTransform: 'uppercase', letterSpacing: '0.8px',
+            margin: '0 0 8px',
+          }}>
+            {title}
+          </p>
+          <p style={{
+            fontSize: isMobile ? '1.5rem' : 'clamp(1.6rem,3vw,2.2rem)',
+            fontWeight: 800, color: 'white',
+            margin: '0 0 6px',
+            letterSpacing: '-1px',
+            lineHeight: 1,
+            overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+          }}>
+            <AnimatedCounter value={raw} prefix={prefix} suffix={suffix} />
+          </p>
+          {change && (
+            <div style={{
+              display: 'inline-flex', alignItems: 'center', gap: 4,
+              padding: '2px 8px', borderRadius: 100,
+              background: change.startsWith('+')
+                ? 'rgba(16,185,129,0.15)' : 'rgba(239,68,68,0.15)',
+              border: `1px solid ${change.startsWith('+') ? 'rgba(16,185,129,0.3)' : 'rgba(239,68,68,0.3)'}`,
+            }}>
+              <span style={{ fontSize: 10 }}>
+                {change.startsWith('+') ? '▲' : '▼'}
+              </span>
+              <span style={{
+                fontSize: 11, fontWeight: 700,
+                color: change.startsWith('+') ? '#34d399' : '#f87171',
+              }}>
+                {change}
+              </span>
+            </div>
+          )}
+        </div>
+
+        {/* Icon */}
+        <div style={{
+          width: isMobile ? 48 : 56,
+          height: isMobile ? 48 : 56,
+          borderRadius: isMobile ? 14 : 18,
+          background: gradient,
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          fontSize: isMobile ? 22 : 26,
+          boxShadow: `0 8px 24px rgba(0,0,0,0.25)`,
+          transition: 'transform 0.4s cubic-bezier(0.4,0,0.2,1)',
+          transform: hovered && !isMobile ? 'scale(1.12) rotate(8deg)' : 'scale(1) rotate(0deg)',
+          flexShrink: 0,
+        }}>
+          {icon}
+        </div>
+      </div>
+
+      {/* Progress bar */}
+      <div style={{ marginTop: 14 }}>
+        <div style={{
+          height: 3, borderRadius: 2,
+          background: 'rgba(255,255,255,0.07)',
+          overflow: 'hidden',
+        }}>
+          <div
+            className="progress-bar"
+            style={{
+              '--target-width': `${progress}%`,
+              height: '100%',
+              width: 0,
+              borderRadius: 2,
+              background: gradient,
+              opacity: 0.8,
+            }}
+          />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================
+// QUICK ACTIONS CARD
+// ============================================================
+function QuickActionsCard({ cashier = false, isMobile }) {
+  const actions = cashier ? [
+    { label: 'Create Invoice', icon: '📝', href: '/invoices/new', gradient: 'linear-gradient(135deg,#3b82f6,#1d4ed8)', desc: 'New billing entry' },
+    { label: 'Record Payment', icon: '💰', href: '/payments/new', gradient: 'linear-gradient(135deg,#10b981,#059669)', desc: 'Mark payment received' },
+    { label: 'View Reports', icon: '📊', href: '/reports', gradient: 'linear-gradient(135deg,#8b5cf6,#6d28d9)', desc: 'Financial summary' },
+  ] : [
+    { label: 'Manage Users', icon: '👤', href: '/users', gradient: 'linear-gradient(135deg,#3b82f6,#1d4ed8)', desc: 'Add or edit team members' },
+    { label: 'View Reports', icon: '📊', href: '/reports', gradient: 'linear-gradient(135deg,#8b5cf6,#6d28d9)', desc: 'Analytics & insights' },
+    { label: 'Manage Branches', icon: '🏢', href: '/branches', gradient: 'linear-gradient(135deg,#f59e0b,#d97706)', desc: 'Branch operations' },
+    { label: 'System Settings', icon: '⚙️', href: '/settings', gradient: 'linear-gradient(135deg,#64748b,#475569)', desc: 'Configuration' },
+  ];
+
+  return (
+    <div className="glass-card" style={{
+      padding: isMobile ? '20px' : 'clamp(20px,2.5vw,28px)',
+      animation: 'scaleIn 0.6s cubic-bezier(0.4,0,0.2,1) 0.4s backwards',
+      borderRadius: 24,
+    }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
+        <h2 style={{
+          fontSize: isMobile ? 16 : 18, fontWeight: 700,
+          color: 'white', margin: 0,
+          letterSpacing: '-0.3px',
+        }}>
+          Quick Actions
+        </h2>
+        <div style={{
+          width: 28, height: 28, borderRadius: 8,
+          background: 'rgba(99,102,241,0.2)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          fontSize: 14,
+        }}>
+          ⚡
+        </div>
+      </div>
+
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+        {actions.map((action, i) => (
+          <QuickActionButton key={action.href} {...action} index={i} isMobile={isMobile} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function QuickActionButton({ label, icon, href, gradient, desc, index, isMobile }) {
+  const [hovered, setHovered] = useState(false);
+
+  return (
+    <a
+      href={href}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      className="quick-action-btn"
+      style={{
+        display: 'flex', alignItems: 'center',
+        gap: isMobile ? 12 : 14,
+        padding: isMobile ? '12px' : '14px 16px',
+        borderRadius: 16,
+        textDecoration: 'none',
+        background: hovered ? 'rgba(255,255,255,0.06)' : 'rgba(255,255,255,0.02)',
+        border: `1px solid ${hovered ? 'rgba(99,102,241,0.4)' : 'rgba(255,255,255,0.06)'}`,
+        animation: `fadeInUp 0.5s ease ${index * 0.08}s backwards`,
+        cursor: 'pointer',
+        WebkitTapHighlightColor: 'transparent',
+      }}
+    >
+      {/* Icon */}
+      <div style={{
+        width: isMobile ? 42 : 48, height: isMobile ? 42 : 48,
+        borderRadius: isMobile ? 12 : 14,
+        background: gradient,
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        fontSize: isMobile ? 18 : 22,
+        boxShadow: hovered ? '0 8px 20px rgba(0,0,0,0.3)' : '0 4px 10px rgba(0,0,0,0.2)',
+        transition: 'all 0.35s cubic-bezier(0.4,0,0.2,1)',
+        transform: hovered && !isMobile ? 'scale(1.08) rotate(6deg)' : 'scale(1) rotate(0)',
+        flexShrink: 0,
+      }}>
+        {icon}
+      </div>
+
+      {/* Label + desc */}
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <p style={{
+          margin: 0, fontWeight: 600,
+          color: hovered ? 'white' : 'rgba(255,255,255,0.8)',
+          fontSize: isMobile ? 13 : 14,
+          transition: 'color 0.3s',
+          overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+        }}>
+          {label}
+        </p>
+        {!isMobile && (
+          <p style={{
+            margin: '2px 0 0',
+            fontSize: 11,
+            color: 'rgba(255,255,255,0.3)',
+            overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+          }}>
+            {desc}
+          </p>
+        )}
+      </div>
+
+      {/* Arrow */}
+      <svg
+        style={{
+          width: 16, height: 16, flexShrink: 0,
+          color: hovered ? 'rgba(99,102,241,0.9)' : 'rgba(255,255,255,0.2)',
+          transition: 'all 0.3s ease',
+          transform: hovered ? 'translateX(3px)' : 'translateX(0)',
+        }}
+        fill="none" stroke="currentColor" viewBox="0 0 24 24"
+      >
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M9 5l7 7-7 7" />
+      </svg>
+    </a>
+  );
+}
+
+// ============================================================
+// MINI CHART (sparkline)
+// ============================================================
+function SparkLine({ data, color }) {
+  const max = Math.max(...data);
+  const min = Math.min(...data);
+  const range = max - min || 1;
+  const w = 80, h = 28;
+
+  const points = data.map((v, i) => {
+    const x = (i / (data.length - 1)) * w;
+    const y = h - ((v - min) / range) * h;
+    return `${x},${y}`;
+  }).join(' ');
+
+  return (
+    <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`}>
+      <polyline
+        points={points}
+        fill="none"
+        stroke={color}
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        opacity="0.8"
+      />
+    </svg>
+  );
+}
+
+// ============================================================
+// ACTIVITY FEED WRAPPER (styled for dark theme)
+// ============================================================
+function StyledActivityFeed({ maxHeight, isMobile }) {
+  return (
+    <div className="glass-card" style={{
+      borderRadius: 24,
+      overflow: 'hidden',
+      animation: 'scaleIn 0.6s cubic-bezier(0.4,0,0.2,1) 0.3s backwards',
+    }}>
+      <div style={{
+        padding: isMobile ? '16px 16px 12px' : '20px 24px 16px',
+        borderBottom: '1px solid rgba(255,255,255,0.06)',
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <div style={{
+            width: 8, height: 8, borderRadius: '50%',
+            background: '#10b981',
+            boxShadow: '0 0 8px rgba(16,185,129,0.5)',
+            animation: 'pulse-ring 2s ease infinite',
+          }} />
+          <h2 style={{
+            margin: 0, fontSize: isMobile ? 15 : 17,
+            fontWeight: 700, color: 'white',
+          }}>
+            Live Activity
+          </h2>
+        </div>
+        <span style={{
+          fontSize: 11, fontWeight: 600,
+          color: 'rgba(255,255,255,0.35)',
+          textTransform: 'uppercase', letterSpacing: '0.5px',
+        }}>
+          Real-time
+        </span>
+      </div>
+      <div style={{ maxHeight, overflowY: 'auto' }}>
+        <ActivityFeed maxHeight={maxHeight} />
+      </div>
+    </div>
+  );
+}
+
+// ============================================================
+// ROLE DASHBOARDS
+// ============================================================
+function SuperAdminDashboard({ user, stats, isMobile }) {
+  const statCards = [
+    { title: 'Total Revenue', value: stats.totalRevenue || 0, icon: '💰', gradient: 'linear-gradient(135deg,#10b981,#059669)', change: '+12.5%', prefix: '₹' },
+    { title: 'Active Jobs', value: stats.activeJobs || 0, icon: '🔧', gradient: 'linear-gradient(135deg,#3b82f6,#1d4ed8)', change: '+5' },
+    { title: 'Total Customers', value: stats.totalCustomers || 0, icon: '👥', gradient: 'linear-gradient(135deg,#8b5cf6,#6d28d9)', change: '+23' },
+    { title: 'All Branches', value: stats.totalBranches || 0, icon: '🏢', gradient: 'linear-gradient(135deg,#f59e0b,#d97706)' },
+  ];
+
+  return (
+    <div className="dashboard-bg" style={{ position: 'relative' }}>
+      <AnimatedBackground />
+      <div style={{
+        position: 'relative', zIndex: 1,
+        maxWidth: 1440, margin: '0 auto',
+        padding: isMobile ? '16px' : 'clamp(20px,3vw,36px)',
+      }}>
+        <DashboardHeader user={user} stats={stats} isMobile={isMobile} />
+
+        <div className="stats-grid" style={{ marginBottom: 'clamp(20px,3vw,28px)' }}>
+          {statCards.map((s, i) => (
+            <StatCard key={s.title} {...s} index={i} isMobile={isMobile} />
+          ))}
+        </div>
+
+        <div className="content-grid">
+          <StyledActivityFeed maxHeight={isMobile ? '380px' : '520px'} isMobile={isMobile} />
+          <QuickActionsCard isMobile={isMobile} />
         </div>
       </div>
     </div>
@@ -298,187 +923,92 @@ function SuperAdminDashboard({ user, stats, isMobile }) {
 }
 
 function ManagerDashboard({ user, stats, isMobile }) {
+  const statCards = [
+    { title: 'Branch Revenue', value: stats.branchRevenue || 0, icon: '💰', gradient: 'linear-gradient(135deg,#10b981,#059669)', change: '+8.2%', prefix: '₹' },
+    { title: 'Pending Jobs', value: stats.pendingJobs || 0, icon: '⏳', gradient: 'linear-gradient(135deg,#f59e0b,#d97706)', change: '-3' },
+    { title: 'Team Members', value: stats.teamMembers || 0, icon: '👥', gradient: 'linear-gradient(135deg,#3b82f6,#1d4ed8)' },
+    { title: "Today's Jobs", value: stats.todaysJobs || 0, icon: '📋', gradient: 'linear-gradient(135deg,#8b5cf6,#6d28d9)', change: '+2' },
+  ];
+
   return (
-    <div style={{
-      minHeight: '100vh',
-      background: 'linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%)',
-      padding: 'clamp(12px, 2vw, 16px)'
-    }}>
-      <div style={{ maxWidth: '1400px', margin: '0 auto' }}>
-        <DashboardHeader 
-          emoji="👔"
-          title={`Welcome, ${isMobile ? user.name.split(' ')[0] : user.name}!`}
-          subtitle={isMobile ? "Branch overview" : "Manager Dashboard - Branch overview"}
-          isMobile={isMobile}
-        />
+    <div className="dashboard-bg" style={{ position: 'relative' }}>
+      <AnimatedBackground />
+      <div style={{
+        position: 'relative', zIndex: 1,
+        maxWidth: 1440, margin: '0 auto',
+        padding: isMobile ? '16px' : 'clamp(20px,3vw,36px)',
+      }}>
+        <DashboardHeader user={user} stats={stats} isMobile={isMobile} />
 
-        <div style={{
-          display: 'grid',
-          gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fit, minmax(min(100%, 220px), 1fr))',
-          gap: 'clamp(12px, 2vw, 16px)',
-          marginBottom: 'clamp(24px, 4vw, 32px)'
-        }}>
-          <StatCard
-            title="Branch Revenue"
-            value={`₹${stats.branchRevenue?.toLocaleString() || 0}`}
-            icon="💰"
-            gradient="linear-gradient(135deg, #10b981 0%, #059669 100%)"
-            index={0}
-            isMobile={isMobile}
-          />
-          <StatCard
-            title="Pending Jobs"
-            value={stats.pendingJobs || 0}
-            icon="⏳"
-            gradient="linear-gradient(135deg, #f59e0b 0%, #d97706 100%)"
-            index={1}
-            isMobile={isMobile}
-          />
-          <StatCard
-            title="Team Members"
-            value={stats.teamMembers || 0}
-            icon="👥"
-            gradient="linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%)"
-            index={2}
-            isMobile={isMobile}
-          />
-          <StatCard
-            title="Today's Jobs"
-            value={stats.todaysJobs || 0}
-            icon="📋"
-            gradient="linear-gradient(135deg, #8b5cf6 0%, #6d28d9 100%)"
-            index={3}
-            isMobile={isMobile}
-          />
+        <div className="stats-grid" style={{ marginBottom: 'clamp(20px,3vw,28px)' }}>
+          {statCards.map((s, i) => (
+            <StatCard key={s.title} {...s} index={i} isMobile={isMobile} />
+          ))}
         </div>
 
-        <div style={{ marginBottom: 'clamp(24px, 4vw, 32px)' }}>
-          <ActivityFeed maxHeight={isMobile ? "400px" : "500px"} />
-        </div>
+        <StyledActivityFeed maxHeight={isMobile ? '380px' : '500px'} isMobile={isMobile} />
       </div>
     </div>
   );
 }
 
 function EmployeeDashboard({ user, stats, isMobile }) {
-  return (
-    <div style={{
-      minHeight: '100vh',
-      background: 'linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%)',
-      padding: 'clamp(12px, 2vw, 16px)'
-    }}>
-      <div style={{ maxWidth: '1400px', margin: '0 auto' }}>
-        <DashboardHeader 
-          emoji="🔧"
-          title={`Hello, ${isMobile ? user.name.split(' ')[0] : user.name}!`}
-          subtitle={isMobile ? "Your work" : "Technician Dashboard - Your work overview"}
-          isMobile={isMobile}
-        />
+  const statCards = [
+    { title: 'Assigned Jobs', value: stats.assignedJobs || 0, icon: '📋', gradient: 'linear-gradient(135deg,#3b82f6,#1d4ed8)', change: '+1' },
+    { title: 'In Progress', value: stats.inProgressJobs || 0, icon: '⚡', gradient: 'linear-gradient(135deg,#f59e0b,#d97706)' },
+    { title: 'Completed Today', value: stats.completedToday || 0, icon: '✅', gradient: 'linear-gradient(135deg,#10b981,#059669)', change: '+2' },
+    { title: 'This Week', value: stats.completedThisWeek || 0, icon: '📊', gradient: 'linear-gradient(135deg,#8b5cf6,#6d28d9)', change: '+7' },
+  ];
 
-        <div style={{
-          display: 'grid',
-          gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fit, minmax(min(100%, 220px), 1fr))',
-          gap: 'clamp(12px, 2vw, 16px)',
-          marginBottom: 'clamp(24px, 4vw, 32px)'
-        }}>
-          <StatCard
-            title="Assigned Jobs"
-            value={stats.assignedJobs || 0}
-            icon="📋"
-            gradient="linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%)"
-            index={0}
-            isMobile={isMobile}
-          />
-          <StatCard
-            title="In Progress"
-            value={stats.inProgressJobs || 0}
-            icon="⚡"
-            gradient="linear-gradient(135deg, #f59e0b 0%, #d97706 100%)"
-            index={1}
-            isMobile={isMobile}
-          />
-          <StatCard
-            title="Completed Today"
-            value={stats.completedToday || 0}
-            icon="✅"
-            gradient="linear-gradient(135deg, #10b981 0%, #059669 100%)"
-            index={2}
-            isMobile={isMobile}
-          />
-          <StatCard
-            title="This Week"
-            value={stats.completedThisWeek || 0}
-            icon="📊"
-            gradient="linear-gradient(135deg, #8b5cf6 0%, #6d28d9 100%)"
-            index={3}
-            isMobile={isMobile}
-          />
+  return (
+    <div className="dashboard-bg" style={{ position: 'relative' }}>
+      <AnimatedBackground />
+      <div style={{
+        position: 'relative', zIndex: 1,
+        maxWidth: 1440, margin: '0 auto',
+        padding: isMobile ? '16px' : 'clamp(20px,3vw,36px)',
+      }}>
+        <DashboardHeader user={user} stats={stats} isMobile={isMobile} />
+
+        <div className="stats-grid" style={{ marginBottom: 'clamp(20px,3vw,28px)' }}>
+          {statCards.map((s, i) => (
+            <StatCard key={s.title} {...s} index={i} isMobile={isMobile} />
+          ))}
         </div>
 
-        <ActivityFeed maxHeight={isMobile ? "400px" : "500px"} />
+        <StyledActivityFeed maxHeight={isMobile ? '380px' : '500px'} isMobile={isMobile} />
       </div>
     </div>
   );
 }
 
 function CashierDashboard({ user, stats, isMobile }) {
-  return (
-    <div style={{
-      minHeight: '100vh',
-      background: 'linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%)',
-      padding: 'clamp(12px, 2vw, 16px)'
-    }}>
-      <div style={{ maxWidth: '1400px', margin: '0 auto' }}>
-        <DashboardHeader 
-          emoji="💰"
-          title={`Hello, ${isMobile ? user.name.split(' ')[0] : user.name}!`}
-          subtitle={isMobile ? "Billing" : "Cashier Dashboard - Billing & Payments"}
-          isMobile={isMobile}
-        />
+  const statCards = [
+    { title: "Today's Collection", value: stats.todaysCollection || 0, icon: '💵', gradient: 'linear-gradient(135deg,#10b981,#059669)', change: '+15.3%', prefix: '₹' },
+    { title: 'Pending Invoices', value: stats.pendingInvoices || 0, icon: '📄', gradient: 'linear-gradient(135deg,#f59e0b,#d97706)', change: '-2' },
+    { title: 'Payments Today', value: stats.paymentsToday || 0, icon: '💳', gradient: 'linear-gradient(135deg,#3b82f6,#1d4ed8)', change: '+4' },
+    { title: 'Overdue', value: stats.overdueInvoices || 0, icon: '⚠️', gradient: 'linear-gradient(135deg,#ef4444,#dc2626)' },
+  ];
 
-        <div style={{
-          display: 'grid',
-          gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fit, minmax(min(100%, 220px), 1fr))',
-          gap: 'clamp(12px, 2vw, 16px)',
-          marginBottom: 'clamp(24px, 4vw, 32px)'
-        }}>
-          <StatCard
-            title="Today's Collection"
-            value={`₹${stats.todaysCollection?.toLocaleString() || 0}`}
-            icon="💵"
-            gradient="linear-gradient(135deg, #10b981 0%, #059669 100%)"
-            index={0}
-            isMobile={isMobile}
-          />
-          <StatCard
-            title="Pending Invoices"
-            value={stats.pendingInvoices || 0}
-            icon="📄"
-            gradient="linear-gradient(135deg, #f59e0b 0%, #d97706 100%)"
-            index={1}
-            isMobile={isMobile}
-          />
-          <StatCard
-            title="Payments Today"
-            value={stats.paymentsToday || 0}
-            icon="💳"
-            gradient="linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%)"
-            index={2}
-            isMobile={isMobile}
-          />
-          <StatCard
-            title="Overdue"
-            value={stats.overdueInvoices || 0}
-            icon="⚠️"
-            gradient="linear-gradient(135deg, #ef4444 0%, #dc2626 100%)"
-            index={3}
-            isMobile={isMobile}
-          />
+  return (
+    <div className="dashboard-bg" style={{ position: 'relative' }}>
+      <AnimatedBackground />
+      <div style={{
+        position: 'relative', zIndex: 1,
+        maxWidth: 1440, margin: '0 auto',
+        padding: isMobile ? '16px' : 'clamp(20px,3vw,36px)',
+      }}>
+        <DashboardHeader user={user} stats={stats} isMobile={isMobile} />
+
+        <div className="stats-grid" style={{ marginBottom: 'clamp(20px,3vw,28px)' }}>
+          {statCards.map((s, i) => (
+            <StatCard key={s.title} {...s} index={i} isMobile={isMobile} />
+          ))}
         </div>
 
-        <div className="cashier-grid">
+        <div className="content-grid cashier-grid">
           <QuickActionsCard cashier isMobile={isMobile} />
-          <ActivityFeed maxHeight={isMobile ? "400px" : "500px"} />
+          <StyledActivityFeed maxHeight={isMobile ? '380px' : '500px'} isMobile={isMobile} />
         </div>
       </div>
     </div>
@@ -487,311 +1017,85 @@ function CashierDashboard({ user, stats, isMobile }) {
 
 function DefaultDashboard({ user }) {
   return (
-    <div style={{
-      minHeight: '100vh',
-      background: 'linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%)',
-      padding: 'clamp(16px, 3vw, 24px)',
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center'
+    <div className="dashboard-bg" style={{
+      display: 'flex', alignItems: 'center',
+      justifyContent: 'center', minHeight: '100vh',
+      position: 'relative',
     }}>
-      <div style={{ 
-        textAlign: 'center',
-        animation: 'scaleIn 0.6s ease-out',
-        padding: '20px'
+      <AnimatedBackground />
+      <div style={{
+        textAlign: 'center', position: 'relative', zIndex: 1,
+        animation: 'scaleIn 0.6s ease', padding: 24,
       }}>
+        <div style={{ fontSize: 64, marginBottom: 16, animation: 'float 3s ease-in-out infinite' }}>🚗</div>
         <h1 style={{
-          fontSize: 'clamp(24px, 6vw, 32px)',
-          fontWeight: '800',
-          background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-          WebkitBackgroundClip: 'text',
-          WebkitTextFillColor: 'transparent',
-          marginBottom: '16px'
+          fontSize: 'clamp(1.5rem,5vw,2rem)', fontWeight: 800,
+          color: 'white', marginBottom: 12,
         }}>
           Welcome, {user?.name}!
         </h1>
-        <p style={{ 
-          color: '#64748b',
-          fontSize: 'clamp(14px, 3vw, 16px)'
-        }}>
-          Your dashboard is being set up...
+        <p style={{ color: 'rgba(255,255,255,0.5)', fontSize: 15 }}>
+          Your dashboard is being configured...
         </p>
       </div>
     </div>
   );
 }
 
-// Reusable Components
-function DashboardHeader({ emoji, title, subtitle, isMobile }) {
-  return (
-    <div style={{
-      marginBottom: 'clamp(24px, 4vw, 32px)',
-      animation: 'fadeInDown 0.6s ease-out'
-    }}>
-      <div style={{ 
-        display: 'flex', 
-        alignItems: 'center', 
-        gap: 'clamp(8px, 2vw, 12px)',
-        marginBottom: '8px',
-        flexWrap: 'wrap'
-      }}>
-        <span style={{ 
-          fontSize: isMobile ? '32px' : 'clamp(32px, 6vw, 40px)',
-          filter: 'drop-shadow(0 4px 8px rgba(0,0,0,0.1))'
-        }}>
-          {emoji}
-        </span>
-        <h1 style={{
-          fontSize: isMobile ? '20px' : 'clamp(24px, 5vw, 32px)',
-          fontWeight: '800',
-          background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-          WebkitBackgroundClip: 'text',
-          WebkitTextFillColor: 'transparent',
-          letterSpacing: '-0.5px',
-          margin: 0
-        }}>
-          {title}
-        </h1>
-      </div>
-      <p style={{ 
-        color: '#64748b',
-        fontSize: isMobile ? '13px' : 'clamp(14px, 2vw, 16px)',
-        fontWeight: '500',
-        margin: 0
-      }}>
-        {subtitle}
-      </p>
-    </div>
-  );
-}
+// ============================================================
+// MAIN PAGE
+// ============================================================
+export default function DashboardPage() {
+  const [user, setUser] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [stats, setStats] = useState({});
+  const [isMobile, setIsMobile] = useState(false);
+  const router = useRouter();
 
-function StatCard({ title, value, icon, gradient, change, index, isMobile }) {
-  const [isHovered, setIsHovered] = useState(false);
+  useEffect(() => {
+    const check = () => setIsMobile(window.innerWidth < 768);
+    check();
+    window.addEventListener('resize', check);
+    return () => window.removeEventListener('resize', check);
+  }, []);
+
+  useEffect(() => {
+    const userData = localStorage.getItem('user');
+    if (userData) {
+      const parsed = JSON.parse(userData);
+      setUser(parsed);
+      fetchDashboardData(parsed.role);
+    } else {
+      router.push('/login');
+    }
+  }, [router]);
+
+  const fetchDashboardData = async (role) => {
+    try {
+      const res = await fetch(`/api/dashboard?role=${role}`);
+      const data = await res.json();
+      if (data.success) setStats(data.data);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (loading) return <><GlobalStyles /><LoadingScreen /></>;
 
   return (
-    <div
-      onMouseEnter={() => setIsHovered(true)}
-      onMouseLeave={() => setIsHovered(false)}
-      onClick={() => setIsHovered(!isHovered)}
-      style={{
-        background: 'white',
-        borderRadius: isMobile ? '16px' : '20px',
-        padding: isMobile ? '16px' : 'clamp(16px, 3vw, 24px)',
-        boxShadow: isHovered 
-          ? '0 20px 40px rgba(0,0,0,0.12)'
-          : '0 4px 12px rgba(0,0,0,0.05)',
-        transition: 'all 0.4s cubic-bezier(0.4, 0, 0.2, 1)',
-        transform: isHovered && !isMobile ? 'translateY(-8px) scale(1.02)' : 'translateY(0) scale(1)',
-        animation: `scaleIn 0.5s ease-out ${index * 0.1}s backwards`,
-        position: 'relative',
-        overflow: 'hidden',
-        cursor: 'pointer',
-        touchAction: 'manipulation'
-      }}
-    >
-      {/* Background gradient on hover */}
-      <div style={{
-        position: 'absolute',
-        top: 0,
-        right: 0,
-        width: isMobile ? '100px' : '150px',
-        height: isMobile ? '100px' : '150px',
-        background: gradient,
-        borderRadius: '50%',
-        opacity: isHovered ? 0.05 : 0,
-        transform: 'translate(50%, -50%)',
-        transition: 'opacity 0.4s ease'
-      }} />
-
-      <div style={{ 
-        display: 'flex', 
-        alignItems: 'center', 
-        justifyContent: 'space-between',
-        gap: isMobile ? '12px' : '16px',
-        position: 'relative',
-        zIndex: 1
-      }}>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <p style={{ 
-            fontSize: isMobile ? '11px' : 'clamp(11px, 2vw, 13px)',
-            color: '#64748b',
-            fontWeight: '600',
-            marginBottom: isMobile ? '6px' : '8px',
-            textTransform: 'uppercase',
-            letterSpacing: '0.5px'
-          }}>
-            {title}
-          </p>
-          <p style={{ 
-            fontSize: isMobile ? '20px' : 'clamp(20px, 4vw, 32px)',
-            fontWeight: '800',
-            color: '#1a202c',
-            marginBottom: '4px',
-            letterSpacing: '-0.5px',
-            overflow: 'hidden',
-            textOverflow: 'ellipsis'
-          }}>
-            {value}
-          </p>
-          {change && (
-            <p style={{ 
-              fontSize: isMobile ? '11px' : 'clamp(11px, 2vw, 13px)',
-              fontWeight: '600',
-              color: change.startsWith('+') ? '#10b981' : '#ef4444',
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: '4px'
-            }}>
-              <span>{change.startsWith('+') ? '↑' : '↓'}</span>
-              {change}
-            </p>
-          )}
-        </div>
-        <div style={{
-          width: isMobile ? '48px' : 'clamp(48px, 10vw, 64px)',
-          height: isMobile ? '48px' : 'clamp(48px, 10vw, 64px)',
-          background: gradient,
-          borderRadius: isMobile ? '14px' : '20px',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          fontSize: isMobile ? '24px' : 'clamp(24px, 5vw, 32px)',
-          transition: 'all 0.4s cubic-bezier(0.4, 0, 0.2, 1)',
-          transform: isHovered && !isMobile ? 'rotate(10deg) scale(1.1)' : 'rotate(0deg) scale(1)',
-          boxShadow: '0 8px 16px rgba(0,0,0,0.1)',
-          flexShrink: 0
-        }}>
-          {icon}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function QuickActionsCard({ cashier, isMobile }) {
-  const actions = cashier ? [
-    { label: 'Create Invoice', icon: '📝', href: '/invoices/new', gradient: 'linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%)' },
-    { label: 'Record Payment', icon: '💰', href: '/payments/new', gradient: 'linear-gradient(135deg, #10b981 0%, #059669 100%)' },
-    { label: 'View Reports', icon: '📊', href: '/reports', gradient: 'linear-gradient(135deg, #8b5cf6 0%, #6d28d9 100%)' },
-  ] : [
-    { label: 'Manage Users', icon: '👤', href: '/users', gradient: 'linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%)' },
-    { label: 'View Reports', icon: '📊', href: '/reports', gradient: 'linear-gradient(135deg, #8b5cf6 0%, #6d28d9 100%)' },
-    { label: 'Manage Branches', icon: '🏢', href: '/branches', gradient: 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)' },
-    { label: 'System Settings', icon: '⚙️', href: '/settings', gradient: 'linear-gradient(135deg, #64748b 0%, #475569 100%)' },
-  ];
-
-  return (
-    <div style={{
-      background: 'white',
-      borderRadius: isMobile ? '20px' : '24px',
-      boxShadow: '0 4px 12px rgba(0,0,0,0.05)',
-      padding: isMobile ? '20px' : 'clamp(20px, 3vw, 24px)',
-      animation: 'scaleIn 0.6s ease-out 0.4s backwards'
-    }}>
-      <h2 style={{ 
-        fontSize: isMobile ? '18px' : 'clamp(18px, 3vw, 20px)',
-        fontWeight: '700',
-        color: '#1a202c',
-        marginBottom: isMobile ? '16px' : '20px',
-        letterSpacing: '-0.5px'
-      }}>
-        Quick Actions
-      </h2>
-      <div style={{ 
-        display: 'flex',
-        flexDirection: 'column',
-        gap: isMobile ? '10px' : '12px'
-      }}>
-        {actions.map((action, index) => (
-          <QuickActionButton 
-            key={action.href}
-            {...action}
-            index={index}
-            isMobile={isMobile}
-          />
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function QuickActionButton({ label, icon, href, gradient, index, isMobile }) {
-  const [isHovered, setIsHovered] = useState(false);
-
-  return (
-    <a
-      href={href}
-      onMouseEnter={() => setIsHovered(true)}
-      onMouseLeave={() => setIsHovered(false)}
-      onClick={(e) => {
-        if (isMobile) {
-          setIsHovered(!isHovered);
+    <>
+      <GlobalStyles />
+      {(() => {
+        switch (user?.role) {
+          case 'SUPER_ADMIN': return <SuperAdminDashboard user={user} stats={stats} isMobile={isMobile} />;
+          case 'MANAGER':     return <ManagerDashboard    user={user} stats={stats} isMobile={isMobile} />;
+          case 'EMPLOYEE':    return <EmployeeDashboard   user={user} stats={stats} isMobile={isMobile} />;
+          case 'CASHIER':     return <CashierDashboard    user={user} stats={stats} isMobile={isMobile} />;
+          default:            return <DefaultDashboard    user={user} />;
         }
-      }}
-      style={{
-        display: 'flex',
-        alignItems: 'center',
-        gap: isMobile ? '12px' : '16px',
-        padding: isMobile ? '12px' : '16px',
-        borderRadius: isMobile ? '14px' : '16px',
-        transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
-        background: isHovered ? 'rgba(102, 126, 234, 0.05)' : 'transparent',
-        border: '2px solid',
-        borderColor: isHovered ? 'rgba(102, 126, 234, 0.2)' : 'rgba(0,0,0,0.05)',
-        textDecoration: 'none',
-        transform: isHovered && !isMobile ? 'translateX(8px)' : 'translateX(0)',
-        cursor: 'pointer',
-        animation: `fadeInUp 0.5s ease-out ${index * 0.1}s backwards`,
-        touchAction: 'manipulation',
-        WebkitTapHighlightColor: 'transparent'
-      }}
-    >
-      <div style={{
-        width: isMobile ? '44px' : '48px',
-        height: isMobile ? '44px' : '48px',
-        background: gradient,
-        borderRadius: isMobile ? '12px' : '14px',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        fontSize: isMobile ? '20px' : '24px',
-        transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
-        transform: isHovered && !isMobile ? 'scale(1.1) rotate(5deg)' : 'scale(1) rotate(0deg)',
-        boxShadow: isHovered ? '0 8px 16px rgba(0,0,0,0.15)' : '0 4px 8px rgba(0,0,0,0.1)',
-        flexShrink: 0
-      }}>
-        {icon}
-      </div>
-      <span style={{ 
-        fontWeight: '600',
-        color: isHovered ? '#667eea' : '#1a202c',
-        fontSize: isMobile ? '14px' : 'clamp(14px, 2vw, 15px)',
-        transition: 'color 0.3s ease',
-        flex: 1,
-        overflow: 'hidden',
-        textOverflow: 'ellipsis',
-        whiteSpace: 'nowrap'
-      }}>
-        {label}
-      </span>
-      {!isMobile && (
-        <svg 
-          style={{ 
-            marginLeft: 'auto',
-            width: '20px',
-            height: '20px',
-            color: isHovered ? '#667eea' : '#cbd5e0',
-            transition: 'all 0.3s ease',
-            transform: isHovered ? 'translateX(4px)' : 'translateX(0)',
-            flexShrink: 0
-          }} 
-          fill="none" 
-          stroke="currentColor" 
-          viewBox="0 0 24 24"
-        >
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-        </svg>
-      )}
-    </a>
+      })()}
+    </>
   );
 }
