@@ -14,7 +14,9 @@ const cleanManagerId = (managerId) => {
   return managerId.trim();
 };
 
-// GET - Fetch all branches
+// src/app/api/branches/route.js
+// ONLY change the GET handler — keep POST, PUT, DELETE exactly the same
+
 export async function GET(req) {
   try {
     const cookieStore = await cookies();
@@ -46,18 +48,23 @@ export async function GET(req) {
       );
     }
 
+    // ✅ Check if request needs all branches (for transfers page)
+    const { searchParams } = new URL(req.url);
+    const allBranches = searchParams.get('all');
+
     let branches;
-    
+
     if (currentUser.role === 'SUPER_ADMIN') {
+      // Super Admin sees all branches
       branches = await prisma.branch.findMany({
-        include: { 
-          manager: { 
-            select: { id: true, name: true, email: true, phone: true } 
+        include: {
+          manager: {
+            select: { id: true, name: true, email: true, phone: true }
           },
           _count: {
-            select: { 
-              staff: true, 
-              customers: true, 
+            select: {
+              staff: true,
+              customers: true,
               jobs: true,
               invoices: true,
             }
@@ -65,23 +72,46 @@ export async function GET(req) {
         },
         orderBy: { createdAt: 'desc' }
       });
-    } else if (currentUser.branchId) {
-      branches = await prisma.branch.findMany({
-        where: { id: currentUser.branchId },
-        include: { 
-          manager: { 
-            select: { id: true, name: true, email: true, phone: true } 
-          },
-          _count: {
-            select: { 
-              staff: true, 
-              customers: true, 
-              jobs: true,
-              invoices: true,
+    } else if (['MANAGER', 'EMPLOYEE', 'CASHIER'].includes(currentUser.role)) {
+      // ✅ FIX: If "all=true" param, return ALL branches (needed for transfers)
+      // Otherwise return only user's branch (for branch management pages)
+      if (allBranches === 'true' && ['MANAGER'].includes(currentUser.role)) {
+        branches = await prisma.branch.findMany({
+          include: {
+            manager: {
+              select: { id: true, name: true, email: true, phone: true }
+            },
+            _count: {
+              select: {
+                staff: true,
+                customers: true,
+                jobs: true,
+                invoices: true,
+              }
             }
-          }
-        },
-      });
+          },
+          orderBy: { createdAt: 'desc' }
+        });
+      } else if (currentUser.branchId) {
+        branches = await prisma.branch.findMany({
+          where: { id: currentUser.branchId },
+          include: {
+            manager: {
+              select: { id: true, name: true, email: true, phone: true }
+            },
+            _count: {
+              select: {
+                staff: true,
+                customers: true,
+                jobs: true,
+                invoices: true,
+              }
+            }
+          },
+        });
+      } else {
+        branches = [];
+      }
     } else {
       branches = [];
     }
@@ -98,6 +128,7 @@ export async function GET(req) {
   }
 }
 
+// ... keep POST, PUT, DELETE exactly the same as before
 // POST - Create new branch
 export async function POST(req) {
   try {

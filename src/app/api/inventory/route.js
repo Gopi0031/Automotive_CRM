@@ -6,7 +6,9 @@ import { cookies } from 'next/headers';
 
 const prisma = new PrismaClient();
 
-// GET - Fetch all parts/inventory
+// src/app/api/inventory/route.js
+// ONLY change the GET handler — keep POST, PUT, DELETE exactly the same
+
 export async function GET(req) {
   try {
     const cookieStore = await cookies();
@@ -38,18 +40,33 @@ export async function GET(req) {
       );
     }
 
-    // Parse query parameters
     const { searchParams } = new URL(req.url);
     const search = searchParams.get('search');
     const category = searchParams.get('category');
     const lowStock = searchParams.get('lowStock');
+    const branchId = searchParams.get('branchId');           // ✅ NEW
+    const allBranches = searchParams.get('allBranches');     // ✅ NEW
 
     let whereClause = { isActive: true };
 
-    // Role-based filtering
-    if (currentUser.role === 'SUPER_ADMIN') {
-      // Super Admin sees all parts
+    // ✅ FIX: Support cross-branch fetching for transfers
+    if (branchId) {
+      // Fetch parts for a specific branch (used when selecting source in transfers)
+      whereClause.branchId = branchId;
+    } else if (allBranches === 'true') {
+      // Fetch parts from ALL branches (for transfer page)
+      // Manager and Super Admin can see all when explicitly requested
+      if (!['SUPER_ADMIN', 'MANAGER'].includes(currentUser.role)) {
+        return NextResponse.json(
+          { success: false, message: 'Access denied' },
+          { status: 403 }
+        );
+      }
+      // No branchId filter — show all branches' parts
+    } else if (currentUser.role === 'SUPER_ADMIN') {
+      // Super Admin sees all parts by default
     } else if (currentUser.branchId) {
+      // Default: show only own branch parts
       whereClause.branchId = currentUser.branchId;
     } else {
       return NextResponse.json(
@@ -68,12 +85,10 @@ export async function GET(req) {
       ];
     }
 
-    // Apply category filter
     if (category) {
       whereClause.category = category;
     }
 
-    // ✅ FIX: Use prisma.part instead of prisma.inventoryItem
     let parts = await prisma.part.findMany({
       where: whereClause,
       include: {
@@ -95,7 +110,6 @@ export async function GET(req) {
       ],
     });
 
-    // Filter low stock if requested
     if (lowStock === 'true') {
       parts = parts.filter(p => p.quantity <= p.minStockLevel);
     }
@@ -114,6 +128,8 @@ export async function GET(req) {
     await prisma.$disconnect();
   }
 }
+
+// ... keep POST, PUT, DELETE exactly the same as before
 
 // POST - Create new part
 export async function POST(req) {

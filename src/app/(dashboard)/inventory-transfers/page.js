@@ -96,23 +96,47 @@ export default function InventoryTransfersPage() {
     return () => window.removeEventListener('resize', c);
   }, []);
 
-  useEffect(() => {
-    const u = localStorage.getItem('user');
-    if (u) {
+// ✅ Replace WITH this:
+useEffect(() => {
+  const loadUser = async () => {
+    const stored = localStorage.getItem('user');
+    let user = null;
+
+    if (stored) {
       try {
-        const parsed = JSON.parse(u);
-        setCurrentUser(parsed);
-        // Fetch full profile to ensure branchId is available
-        if (!parsed.branchId && !parsed.branch?.id && parsed.role !== 'SUPER_ADMIN') {
-          fetchUserProfile(parsed);
-        }
-      } catch (parseErr) {
-        console.error('Failed to parse user from localStorage:', parseErr);
+        user = JSON.parse(stored);
+        setCurrentUser(user);
+      } catch (e) {
+        console.error('Failed to parse user:', e);
         localStorage.removeItem('user');
       }
     }
-    fetchInitial();
-  }, []);
+
+    // Always fetch fresh profile to ensure branchId is available
+    try {
+      const res = await fetch('/api/auth/profile');
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success && data.data) {
+          const freshUser = { ...user, ...data.data };
+          setCurrentUser(freshUser);
+          localStorage.setItem('user', JSON.stringify(freshUser));
+          console.log('✅ User loaded:', {
+            name: freshUser.name,
+            role: freshUser.role,
+            branchId: freshUser.branchId,
+            branch: freshUser.branch?.name,
+          });
+        }
+      }
+    } catch (err) {
+      console.error('Profile fetch failed:', err);
+    }
+  };
+
+  loadUser();
+  fetchInitial();
+}, []);
 
   const fetchUserProfile = async (fallbackUser) => {
     try {
@@ -147,14 +171,23 @@ export default function InventoryTransfersPage() {
 
   useEffect(() => { if (currentUser) fetchTransfers(); }, [filters, currentUser]);
 
-  const fetchInitial = async () => {
-    try {
-      const [bR, pR] = await Promise.all([fetch('/api/branches'), fetch('/api/inventory')]);
-      const bD = await bR.json(), pD = await pR.json();
-      if (bD.success) setBranches(bD.data || []);
-      if (pD.success) setParts(pD.data || []);
-    } catch {}
-  };
+// src/app/(dashboard)/inventory-transfers/page.js
+// Find the fetchInitial function and replace it with this:
+
+const fetchInitial = async () => {
+  try {
+    const [bR, pR] = await Promise.all([
+      fetch('/api/branches?all=true'),              // ✅ FIX: Get ALL branches
+      fetch('/api/inventory?allBranches=true'),      // ✅ FIX: Get ALL branches' parts
+    ]);
+    const bD = await bR.json();
+    const pD = await pR.json();
+    if (bD.success) setBranches(bD.data || []);
+    if (pD.success) setParts(pD.data || []);
+  } catch (err) {
+    console.error('Failed to fetch initial data:', err);
+  }
+};
 
   const fetchTransfers = useCallback(async () => {
     try {

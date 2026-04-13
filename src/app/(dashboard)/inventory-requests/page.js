@@ -137,11 +137,39 @@ export default function InventoryRequestsPage() {
     return () => window.removeEventListener('resize', check);
   }, []);
 
-  useEffect(() => {
-    const u = localStorage.getItem('user');
-    if (u) setCurrentUser(JSON.parse(u));
-    fetchInitial();
-  }, []);
+useEffect(() => {
+  const loadUser = async () => {
+    const stored = localStorage.getItem('user');
+    let user = null;
+
+    if (stored) {
+      try {
+        user = JSON.parse(stored);
+        setCurrentUser(user);
+      } catch (e) {
+        localStorage.removeItem('user');
+      }
+    }
+
+    // Fetch fresh profile to ensure branchId is available
+    try {
+      const res = await fetch('/api/auth/profile');
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success && data.data) {
+          const freshUser = { ...user, ...data.data };
+          setCurrentUser(freshUser);
+          localStorage.setItem('user', JSON.stringify(freshUser));
+        }
+      }
+    } catch (err) {
+      console.error('Profile fetch failed:', err);
+    }
+  };
+
+  loadUser();
+  fetchInitial();
+}, []);
 
   useEffect(() => { if (currentUser) fetchRequests(); }, [filters, currentUser]);
 
