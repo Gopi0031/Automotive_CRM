@@ -1,7 +1,7 @@
 // src/app/(dashboard)/dashboard/page.js
 'use client';
 
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState, useRef, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import ActivityFeed from '../../../components/ActivityFeed';
 
@@ -77,6 +77,10 @@ function GlobalStyles() {
         0%, 100% { transform: scaleY(0.5); }
         50% { transform: scaleY(1.2); }
       }
+      @keyframes spin-refresh {
+        from { transform: rotate(0deg); }
+        to { transform: rotate(360deg); }
+      }
 
       .dashboard-bg {
         min-height: 100vh;
@@ -123,9 +127,9 @@ function GlobalStyles() {
       .stat-card:active { transform: translateY(-4px) scale(0.99); }
 
       .shimmer-loading {
-        background: linear-gradient(90deg, 
-          rgba(255,255,255,0.03) 25%, 
-          rgba(255,255,255,0.08) 50%, 
+        background: linear-gradient(90deg,
+          rgba(255,255,255,0.03) 25%,
+          rgba(255,255,255,0.08) 50%,
           rgba(255,255,255,0.03) 75%
         );
         background-size: 1000px 100%;
@@ -161,6 +165,21 @@ function GlobalStyles() {
         animation-delay: 0.5s;
       }
 
+      .refresh-btn {
+        transition: all 0.3s ease;
+        cursor: pointer;
+      }
+      .refresh-btn:hover {
+        background: rgba(255,255,255,0.1) !important;
+        border-color: rgba(99,102,241,0.4) !important;
+      }
+      .refresh-btn:active {
+        transform: scale(0.95);
+      }
+      .refresh-spinning {
+        animation: spin-refresh 0.6s linear infinite;
+      }
+
       .content-grid {
         display: grid;
         gap: clamp(16px, 2.5vw, 24px);
@@ -193,12 +212,12 @@ function GlobalStyles() {
 
       ::-webkit-scrollbar { width: 5px; height: 5px; }
       ::-webkit-scrollbar-track { background: rgba(255,255,255,0.03); }
-      ::-webkit-scrollbar-thumb { 
-        background: rgba(102,126,234,0.3); 
-        border-radius: 3px; 
+      ::-webkit-scrollbar-thumb {
+        background: rgba(102,126,234,0.3);
+        border-radius: 3px;
       }
-      ::-webkit-scrollbar-thumb:hover { 
-        background: rgba(102,126,234,0.5); 
+      ::-webkit-scrollbar-thumb:hover {
+        background: rgba(102,126,234,0.5);
       }
 
       @media (max-width: 640px) {
@@ -259,7 +278,6 @@ function AnimatedBackground() {
 
     const draw = () => {
       ctx.clearRect(0, 0, canvas.width, canvas.height);
-      // connect nearby
       for (let i = 0; i < particles.length; i++) {
         for (let j = i + 1; j < particles.length; j++) {
           const dx = particles[i].x - particles[j].x;
@@ -311,7 +329,6 @@ function AnimatedCounter({ value, prefix = '', suffix = '' }) {
       ? parseFloat(value.replace(/[^0-9.]/g, ''))
       : value;
     if (isNaN(raw) || raw === 0) { setDisplay(0); return; }
-
     const timer = setTimeout(() => setStarted(true), 300);
     return () => clearTimeout(timer);
   }, [value]);
@@ -323,7 +340,6 @@ function AnimatedCounter({ value, prefix = '', suffix = '' }) {
       : value;
     if (isNaN(raw)) return;
 
-    let start = 0;
     const duration = 1200;
     const step = 16;
     const steps = duration / step;
@@ -383,7 +399,6 @@ function LoadingScreen() {
     }}>
       <AnimatedBackground />
       <div style={{ textAlign: 'center', position: 'relative', zIndex: 1 }}>
-        {/* Spinner rings */}
         <div style={{ width: 72, height: 72, margin: '0 auto', position: 'relative' }}>
           {[0, 1, 2].map((i) => (
             <div key={i} style={{
@@ -403,8 +418,6 @@ function LoadingScreen() {
             animation: 'pulse-ring 1.5s ease infinite',
           }} />
         </div>
-
-        {/* Wave bars */}
         <div style={{ display: 'flex', gap: 4, justifyContent: 'center', marginTop: 24, marginBottom: 16 }}>
           {[0,1,2,3,4].map(i => (
             <div key={i} style={{
@@ -415,7 +428,6 @@ function LoadingScreen() {
             }} />
           ))}
         </div>
-
         <p style={{
           color: 'rgba(255,255,255,0.6)',
           fontSize: 14, fontWeight: 500,
@@ -429,9 +441,78 @@ function LoadingScreen() {
 }
 
 // ============================================================
+// REFRESH INDICATOR
+// ============================================================
+function RefreshIndicator({ lastUpdated, onRefresh, isMobile }) {
+  const [refreshing, setRefreshing] = useState(false);
+  const [timeAgo, setTimeAgo] = useState('');
+
+  useEffect(() => {
+    if (!lastUpdated) return;
+    const update = () => {
+      const seconds = Math.floor((Date.now() - lastUpdated.getTime()) / 1000);
+      if (seconds < 5) setTimeAgo('just now');
+      else if (seconds < 60) setTimeAgo(`${seconds}s ago`);
+      else setTimeAgo(`${Math.floor(seconds / 60)}m ago`);
+    };
+    update();
+    const interval = setInterval(update, 5000);
+    return () => clearInterval(interval);
+  }, [lastUpdated]);
+
+  const handleRefresh = async () => {
+    if (refreshing) return;
+    setRefreshing(true);
+    await onRefresh();
+    setTimeout(() => setRefreshing(false), 800);
+  };
+
+  return (
+    <div style={{
+      display: 'flex', alignItems: 'center', gap: 8,
+      animation: 'fadeInRight 0.5s ease 0.3s backwards',
+    }}>
+      {!isMobile && lastUpdated && (
+        <span style={{
+          fontSize: 11, color: 'rgba(255,255,255,0.3)',
+          fontWeight: 500,
+        }}>
+          Updated {timeAgo}
+        </span>
+      )}
+      <button
+        onClick={handleRefresh}
+        disabled={refreshing}
+        className="refresh-btn"
+        style={{
+          width: 34, height: 34, borderRadius: 10,
+          background: 'rgba(255,255,255,0.05)',
+          border: '1px solid rgba(255,255,255,0.08)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          opacity: refreshing ? 0.7 : 1,
+        }}
+        title="Refresh stats"
+      >
+        <svg
+          style={{
+            width: 15, height: 15,
+            color: refreshing ? '#6366f1' : 'rgba(255,255,255,0.5)',
+          }}
+          className={refreshing ? 'refresh-spinning' : ''}
+          fill="none" stroke="currentColor" viewBox="0 0 24 24"
+        >
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+            d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+        </svg>
+      </button>
+    </div>
+  );
+}
+
+// ============================================================
 // DASHBOARD HEADER
 // ============================================================
-function DashboardHeader({ user, stats, isMobile }) {
+function DashboardHeader({ user, isMobile, lastUpdated, onRefresh }) {
   const [time, setTime] = useState(new Date());
   const role = ROLE_CONFIG[user?.role] || ROLE_CONFIG.EMPLOYEE;
 
@@ -442,16 +523,13 @@ function DashboardHeader({ user, stats, isMobile }) {
 
   const hour = time.getHours();
   const greeting = hour < 12 ? 'Good Morning' : hour < 17 ? 'Good Afternoon' : 'Good Evening';
-  const displayName = isMobile
-    ? user?.name?.split(' ')[0]
-    : user?.name;
+  const displayName = isMobile ? user?.name?.split(' ')[0] : user?.name;
 
   return (
     <div style={{
       marginBottom: 'clamp(20px,3vw,32px)',
       animation: 'fadeInDown 0.7s cubic-bezier(0.4,0,0.2,1)',
     }}>
-      {/* Top row */}
       <div style={{
         display: 'flex',
         alignItems: 'flex-start',
@@ -461,7 +539,6 @@ function DashboardHeader({ user, stats, isMobile }) {
       }}>
         {/* Left: avatar + text */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 16, minWidth: 0 }}>
-          {/* Avatar */}
           <div style={{ position: 'relative', flexShrink: 0 }}>
             <div style={{
               width: isMobile ? 48 : 60,
@@ -475,7 +552,6 @@ function DashboardHeader({ user, stats, isMobile }) {
             }}>
               {role.emoji}
             </div>
-            {/* Online dot */}
             <div style={{
               position: 'absolute', bottom: 2, right: 2,
               width: 10, height: 10, borderRadius: '50%',
@@ -492,7 +568,6 @@ function DashboardHeader({ user, stats, isMobile }) {
             </div>
           </div>
 
-          {/* Title */}
           <div style={{ minWidth: 0 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 4 }}>
               <span className="header-badge" style={{
@@ -531,37 +606,38 @@ function DashboardHeader({ user, stats, isMobile }) {
           </div>
         </div>
 
-        {/* Right: mini stats */}
-        {!isMobile && (
-          <div style={{
-            display: 'flex', gap: 12, flexShrink: 0,
-            animation: 'fadeInRight 0.7s ease 0.2s backwards',
-          }}>
-            {[
-              { label: 'System', value: 'Online', dot: '#10b981' },
-              { label: 'Session', value: 'Active', dot: '#6366f1' },
-            ].map(item => (
-              <div key={item.label} className="glass-card" style={{
-                padding: '10px 16px', borderRadius: 12,
-                textAlign: 'center', minWidth: 90,
-              }}>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, marginBottom: 4 }}>
-                  <div style={{ width: 6, height: 6, borderRadius: '50%', background: item.dot }} />
-                  <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.4)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                    {item.label}
-                  </span>
+        {/* Right: system status + refresh */}
+        <div style={{
+          display: 'flex', gap: 10, flexShrink: 0, alignItems: 'center',
+          animation: 'fadeInRight 0.7s ease 0.2s backwards',
+        }}>
+          {!isMobile && (
+            <>
+              {[
+                { label: 'System', value: 'Online', dot: '#10b981' },
+                { label: 'Session', value: 'Active', dot: '#6366f1' },
+              ].map(item => (
+                <div key={item.label} className="glass-card" style={{
+                  padding: '10px 16px', borderRadius: 12,
+                  textAlign: 'center', minWidth: 90,
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, marginBottom: 4 }}>
+                    <div style={{ width: 6, height: 6, borderRadius: '50%', background: item.dot }} />
+                    <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.4)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                      {item.label}
+                    </span>
+                  </div>
+                  <span style={{ fontSize: 13, fontWeight: 700, color: 'white' }}>{item.value}</span>
                 </div>
-                <span style={{ fontSize: 13, fontWeight: 700, color: 'white' }}>{item.value}</span>
-              </div>
-            ))}
-          </div>
-        )}
+              ))}
+            </>
+          )}
+          <RefreshIndicator lastUpdated={lastUpdated} onRefresh={onRefresh} isMobile={isMobile} />
+        </div>
       </div>
 
-      {/* Divider */}
       <div style={{
-        marginTop: 20,
-        height: 1,
+        marginTop: 20, height: 1,
         background: 'linear-gradient(90deg, rgba(99,102,241,0.4), rgba(6,182,212,0.2), transparent)',
       }} />
     </div>
@@ -571,13 +647,12 @@ function DashboardHeader({ user, stats, isMobile }) {
 // ============================================================
 // STAT CARD
 // ============================================================
-function StatCard({ title, value, icon, gradient, change, index, isMobile, prefix = '', suffix = '' }) {
+function StatCard({ title, value, icon, gradient, index, isMobile, prefix = '', suffix = '' }) {
   const [hovered, setHovered] = useState(false);
 
-  // parse raw number for progress
   const raw = typeof value === 'number' ? value
     : parseFloat(String(value).replace(/[^0-9.]/g, '')) || 0;
-  const progress = Math.min(100, (raw / (raw * 1.5)) * 100) || 60;
+  const progress = Math.min(100, raw > 0 ? 67 : 0);
 
   return (
     <div
@@ -606,7 +681,6 @@ function StatCard({ title, value, icon, gradient, change, index, isMobile, prefi
 
       {/* Top row */}
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 }}>
-        {/* Text */}
         <div style={{ flex: 1, minWidth: 0 }}>
           <p style={{
             fontSize: 10, fontWeight: 700,
@@ -626,28 +700,8 @@ function StatCard({ title, value, icon, gradient, change, index, isMobile, prefi
           }}>
             <AnimatedCounter value={raw} prefix={prefix} suffix={suffix} />
           </p>
-          {change && (
-            <div style={{
-              display: 'inline-flex', alignItems: 'center', gap: 4,
-              padding: '2px 8px', borderRadius: 100,
-              background: change.startsWith('+')
-                ? 'rgba(16,185,129,0.15)' : 'rgba(239,68,68,0.15)',
-              border: `1px solid ${change.startsWith('+') ? 'rgba(16,185,129,0.3)' : 'rgba(239,68,68,0.3)'}`,
-            }}>
-              <span style={{ fontSize: 10 }}>
-                {change.startsWith('+') ? '▲' : '▼'}
-              </span>
-              <span style={{
-                fontSize: 11, fontWeight: 700,
-                color: change.startsWith('+') ? '#34d399' : '#f87171',
-              }}>
-                {change}
-              </span>
-            </div>
-          )}
         </div>
 
-        {/* Icon */}
         <div style={{
           width: isMobile ? 48 : 56,
           height: isMobile ? 48 : 56,
@@ -694,13 +748,13 @@ function StatCard({ title, value, icon, gradient, change, index, isMobile, prefi
 function QuickActionsCard({ cashier = false, isMobile }) {
   const actions = cashier ? [
     { label: 'Create Invoice', icon: '📝', href: '/invoices/new', gradient: 'linear-gradient(135deg,#3b82f6,#1d4ed8)', desc: 'New billing entry' },
-    { label: 'Record Payment', icon: '💰', href: '/payments/new', gradient: 'linear-gradient(135deg,#10b981,#059669)', desc: 'Mark payment received' },
+    { label: 'Record Payment', icon: '💰', href: '/payments', gradient: 'linear-gradient(135deg,#10b981,#059669)', desc: 'Mark payment received' },
     { label: 'View Reports', icon: '📊', href: '/reports', gradient: 'linear-gradient(135deg,#8b5cf6,#6d28d9)', desc: 'Financial summary' },
   ] : [
     { label: 'Manage Users', icon: '👤', href: '/users', gradient: 'linear-gradient(135deg,#3b82f6,#1d4ed8)', desc: 'Add or edit team members' },
     { label: 'View Reports', icon: '📊', href: '/reports', gradient: 'linear-gradient(135deg,#8b5cf6,#6d28d9)', desc: 'Analytics & insights' },
     { label: 'Manage Branches', icon: '🏢', href: '/branches', gradient: 'linear-gradient(135deg,#f59e0b,#d97706)', desc: 'Branch operations' },
-    { label: 'System Settings', icon: '⚙️', href: '/settings', gradient: 'linear-gradient(135deg,#64748b,#475569)', desc: 'Configuration' },
+    { label: 'Inventory', icon: '📦', href: '/inventory', gradient: 'linear-gradient(135deg,#64748b,#475569)', desc: 'Parts & stock' },
   ];
 
   return (
@@ -712,8 +766,7 @@ function QuickActionsCard({ cashier = false, isMobile }) {
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
         <h2 style={{
           fontSize: isMobile ? 16 : 18, fontWeight: 700,
-          color: 'white', margin: 0,
-          letterSpacing: '-0.3px',
+          color: 'white', margin: 0, letterSpacing: '-0.3px',
         }}>
           Quick Actions
         </h2>
@@ -758,7 +811,6 @@ function QuickActionButton({ label, icon, href, gradient, desc, index, isMobile 
         WebkitTapHighlightColor: 'transparent',
       }}
     >
-      {/* Icon */}
       <div style={{
         width: isMobile ? 42 : 48, height: isMobile ? 42 : 48,
         borderRadius: isMobile ? 12 : 14,
@@ -773,7 +825,6 @@ function QuickActionButton({ label, icon, href, gradient, desc, index, isMobile 
         {icon}
       </div>
 
-      {/* Label + desc */}
       <div style={{ flex: 1, minWidth: 0 }}>
         <p style={{
           margin: 0, fontWeight: 600,
@@ -786,8 +837,7 @@ function QuickActionButton({ label, icon, href, gradient, desc, index, isMobile 
         </p>
         {!isMobile && (
           <p style={{
-            margin: '2px 0 0',
-            fontSize: 11,
+            margin: '2px 0 0', fontSize: 11,
             color: 'rgba(255,255,255,0.3)',
             overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
           }}>
@@ -796,7 +846,6 @@ function QuickActionButton({ label, icon, href, gradient, desc, index, isMobile 
         )}
       </div>
 
-      {/* Arrow */}
       <svg
         style={{
           width: 16, height: 16, flexShrink: 0,
@@ -813,43 +862,12 @@ function QuickActionButton({ label, icon, href, gradient, desc, index, isMobile 
 }
 
 // ============================================================
-// MINI CHART (sparkline)
-// ============================================================
-function SparkLine({ data, color }) {
-  const max = Math.max(...data);
-  const min = Math.min(...data);
-  const range = max - min || 1;
-  const w = 80, h = 28;
-
-  const points = data.map((v, i) => {
-    const x = (i / (data.length - 1)) * w;
-    const y = h - ((v - min) / range) * h;
-    return `${x},${y}`;
-  }).join(' ');
-
-  return (
-    <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`}>
-      <polyline
-        points={points}
-        fill="none"
-        stroke={color}
-        strokeWidth="2"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        opacity="0.8"
-      />
-    </svg>
-  );
-}
-
-// ============================================================
-// ACTIVITY FEED WRAPPER (styled for dark theme)
+// ACTIVITY FEED WRAPPER
 // ============================================================
 function StyledActivityFeed({ maxHeight, isMobile }) {
   return (
     <div className="glass-card" style={{
-      borderRadius: 24,
-      overflow: 'hidden',
+      borderRadius: 24, overflow: 'hidden',
       animation: 'scaleIn 0.6s cubic-bezier(0.4,0,0.2,1) 0.3s backwards',
     }}>
       <div style={{
@@ -889,11 +907,11 @@ function StyledActivityFeed({ maxHeight, isMobile }) {
 // ============================================================
 // ROLE DASHBOARDS
 // ============================================================
-function SuperAdminDashboard({ user, stats, isMobile }) {
+function SuperAdminDashboard({ user, stats, isMobile, lastUpdated, onRefresh }) {
   const statCards = [
-    { title: 'Total Revenue', value: stats.totalRevenue || 0, icon: '💰', gradient: 'linear-gradient(135deg,#10b981,#059669)', change: '+12.5%', prefix: '₹' },
-    { title: 'Active Jobs', value: stats.activeJobs || 0, icon: '🔧', gradient: 'linear-gradient(135deg,#3b82f6,#1d4ed8)', change: '+5' },
-    { title: 'Total Customers', value: stats.totalCustomers || 0, icon: '👥', gradient: 'linear-gradient(135deg,#8b5cf6,#6d28d9)', change: '+23' },
+    { title: 'Total Revenue', value: stats.totalRevenue || 0, icon: '💰', gradient: 'linear-gradient(135deg,#10b981,#059669)', prefix: '₹' },
+    { title: 'Active Jobs', value: stats.activeJobs || 0, icon: '🔧', gradient: 'linear-gradient(135deg,#3b82f6,#1d4ed8)' },
+    { title: 'Total Customers', value: stats.totalCustomers || 0, icon: '👥', gradient: 'linear-gradient(135deg,#8b5cf6,#6d28d9)' },
     { title: 'All Branches', value: stats.totalBranches || 0, icon: '🏢', gradient: 'linear-gradient(135deg,#f59e0b,#d97706)' },
   ];
 
@@ -905,7 +923,7 @@ function SuperAdminDashboard({ user, stats, isMobile }) {
         maxWidth: 1440, margin: '0 auto',
         padding: isMobile ? '16px' : 'clamp(20px,3vw,36px)',
       }}>
-        <DashboardHeader user={user} stats={stats} isMobile={isMobile} />
+        <DashboardHeader user={user} isMobile={isMobile} lastUpdated={lastUpdated} onRefresh={onRefresh} />
 
         <div className="stats-grid" style={{ marginBottom: 'clamp(20px,3vw,28px)' }}>
           {statCards.map((s, i) => (
@@ -922,12 +940,12 @@ function SuperAdminDashboard({ user, stats, isMobile }) {
   );
 }
 
-function ManagerDashboard({ user, stats, isMobile }) {
+function ManagerDashboard({ user, stats, isMobile, lastUpdated, onRefresh }) {
   const statCards = [
-    { title: 'Branch Revenue', value: stats.branchRevenue || 0, icon: '💰', gradient: 'linear-gradient(135deg,#10b981,#059669)', change: '+8.2%', prefix: '₹' },
-    { title: 'Pending Jobs', value: stats.pendingJobs || 0, icon: '⏳', gradient: 'linear-gradient(135deg,#f59e0b,#d97706)', change: '-3' },
+    { title: 'Branch Revenue', value: stats.branchRevenue || 0, icon: '💰', gradient: 'linear-gradient(135deg,#10b981,#059669)', prefix: '₹' },
+    { title: 'Pending Jobs', value: stats.pendingJobs || 0, icon: '⏳', gradient: 'linear-gradient(135deg,#f59e0b,#d97706)' },
     { title: 'Team Members', value: stats.teamMembers || 0, icon: '👥', gradient: 'linear-gradient(135deg,#3b82f6,#1d4ed8)' },
-    { title: "Today's Jobs", value: stats.todaysJobs || 0, icon: '📋', gradient: 'linear-gradient(135deg,#8b5cf6,#6d28d9)', change: '+2' },
+    { title: "Today's Jobs", value: stats.todaysJobs || 0, icon: '📋', gradient: 'linear-gradient(135deg,#8b5cf6,#6d28d9)' },
   ];
 
   return (
@@ -938,7 +956,7 @@ function ManagerDashboard({ user, stats, isMobile }) {
         maxWidth: 1440, margin: '0 auto',
         padding: isMobile ? '16px' : 'clamp(20px,3vw,36px)',
       }}>
-        <DashboardHeader user={user} stats={stats} isMobile={isMobile} />
+        <DashboardHeader user={user} isMobile={isMobile} lastUpdated={lastUpdated} onRefresh={onRefresh} />
 
         <div className="stats-grid" style={{ marginBottom: 'clamp(20px,3vw,28px)' }}>
           {statCards.map((s, i) => (
@@ -952,12 +970,12 @@ function ManagerDashboard({ user, stats, isMobile }) {
   );
 }
 
-function EmployeeDashboard({ user, stats, isMobile }) {
+function EmployeeDashboard({ user, stats, isMobile, lastUpdated, onRefresh }) {
   const statCards = [
-    { title: 'Assigned Jobs', value: stats.assignedJobs || 0, icon: '📋', gradient: 'linear-gradient(135deg,#3b82f6,#1d4ed8)', change: '+1' },
+    { title: 'Assigned Jobs', value: stats.assignedJobs || 0, icon: '📋', gradient: 'linear-gradient(135deg,#3b82f6,#1d4ed8)' },
     { title: 'In Progress', value: stats.inProgressJobs || 0, icon: '⚡', gradient: 'linear-gradient(135deg,#f59e0b,#d97706)' },
-    { title: 'Completed Today', value: stats.completedToday || 0, icon: '✅', gradient: 'linear-gradient(135deg,#10b981,#059669)', change: '+2' },
-    { title: 'This Week', value: stats.completedThisWeek || 0, icon: '📊', gradient: 'linear-gradient(135deg,#8b5cf6,#6d28d9)', change: '+7' },
+    { title: 'Completed Today', value: stats.completedToday || 0, icon: '✅', gradient: 'linear-gradient(135deg,#10b981,#059669)' },
+    { title: 'This Week', value: stats.completedThisWeek || 0, icon: '📊', gradient: 'linear-gradient(135deg,#8b5cf6,#6d28d9)' },
   ];
 
   return (
@@ -968,7 +986,7 @@ function EmployeeDashboard({ user, stats, isMobile }) {
         maxWidth: 1440, margin: '0 auto',
         padding: isMobile ? '16px' : 'clamp(20px,3vw,36px)',
       }}>
-        <DashboardHeader user={user} stats={stats} isMobile={isMobile} />
+        <DashboardHeader user={user} isMobile={isMobile} lastUpdated={lastUpdated} onRefresh={onRefresh} />
 
         <div className="stats-grid" style={{ marginBottom: 'clamp(20px,3vw,28px)' }}>
           {statCards.map((s, i) => (
@@ -982,11 +1000,11 @@ function EmployeeDashboard({ user, stats, isMobile }) {
   );
 }
 
-function CashierDashboard({ user, stats, isMobile }) {
+function CashierDashboard({ user, stats, isMobile, lastUpdated, onRefresh }) {
   const statCards = [
-    { title: "Today's Collection", value: stats.todaysCollection || 0, icon: '💵', gradient: 'linear-gradient(135deg,#10b981,#059669)', change: '+15.3%', prefix: '₹' },
-    { title: 'Pending Invoices', value: stats.pendingInvoices || 0, icon: '📄', gradient: 'linear-gradient(135deg,#f59e0b,#d97706)', change: '-2' },
-    { title: 'Payments Today', value: stats.paymentsToday || 0, icon: '💳', gradient: 'linear-gradient(135deg,#3b82f6,#1d4ed8)', change: '+4' },
+    { title: "Today's Collection", value: stats.todaysCollection || 0, icon: '💵', gradient: 'linear-gradient(135deg,#10b981,#059669)', prefix: '₹' },
+    { title: 'Pending Invoices', value: stats.pendingInvoices || 0, icon: '📄', gradient: 'linear-gradient(135deg,#f59e0b,#d97706)' },
+    { title: 'Payments Today', value: stats.paymentsToday || 0, icon: '💳', gradient: 'linear-gradient(135deg,#3b82f6,#1d4ed8)' },
     { title: 'Overdue', value: stats.overdueInvoices || 0, icon: '⚠️', gradient: 'linear-gradient(135deg,#ef4444,#dc2626)' },
   ];
 
@@ -998,7 +1016,7 @@ function CashierDashboard({ user, stats, isMobile }) {
         maxWidth: 1440, margin: '0 auto',
         padding: isMobile ? '16px' : 'clamp(20px,3vw,36px)',
       }}>
-        <DashboardHeader user={user} stats={stats} isMobile={isMobile} />
+        <DashboardHeader user={user} isMobile={isMobile} lastUpdated={lastUpdated} onRefresh={onRefresh} />
 
         <div className="stats-grid" style={{ marginBottom: 'clamp(20px,3vw,28px)' }}>
           {statCards.map((s, i) => (
@@ -1050,7 +1068,10 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState({});
   const [isMobile, setIsMobile] = useState(false);
+  const [lastUpdated, setLastUpdated] = useState(null);
   const router = useRouter();
+  const refreshInterval = useRef(null);
+  const userRef = useRef(null);
 
   useEffect(() => {
     const check = () => setIsMobile(window.innerWidth < 768);
@@ -1059,40 +1080,93 @@ export default function DashboardPage() {
     return () => window.removeEventListener('resize', check);
   }, []);
 
+  const fetchDashboardData = useCallback(async (role, isInitial = false) => {
+    try {
+      if (isInitial) setLoading(true);
+      const res = await fetch(`/api/dashboard?role=${role}`, {
+        headers: { 'Cache-Control': 'no-cache' },
+      });
+      if (!res.ok) return;
+      const data = await res.json();
+      if (data.success) {
+        setStats(data.data);
+        setLastUpdated(new Date());
+      }
+    } catch (err) {
+      console.error('Dashboard fetch error:', err);
+    } finally {
+      if (isInitial) setLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     const userData = localStorage.getItem('user');
     if (userData) {
-      const parsed = JSON.parse(userData);
-      setUser(parsed);
-      fetchDashboardData(parsed.role);
+      try {
+        const parsed = JSON.parse(userData);
+        setUser(parsed);
+        userRef.current = parsed;
+
+        // Initial fetch
+        fetchDashboardData(parsed.role, true);
+
+        // Auto-refresh every 30 seconds
+        refreshInterval.current = setInterval(() => {
+          if (userRef.current?.role) {
+            fetchDashboardData(userRef.current.role, false);
+          }
+        }, 30000);
+      } catch {
+        router.push('/login');
+      }
     } else {
       router.push('/login');
     }
-  }, [router]);
 
-  const fetchDashboardData = async (role) => {
-    try {
-      const res = await fetch(`/api/dashboard?role=${role}`);
-      const data = await res.json();
-      if (data.success) setStats(data.data);
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setLoading(false);
+    return () => {
+      if (refreshInterval.current) {
+        clearInterval(refreshInterval.current);
+      }
+    };
+  }, [router, fetchDashboardData]);
+
+  // Refresh stats when tab becomes visible
+  useEffect(() => {
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible' && userRef.current?.role) {
+        fetchDashboardData(userRef.current.role, false);
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibility);
+    return () => document.removeEventListener('visibilitychange', handleVisibility);
+  }, [fetchDashboardData]);
+
+  const handleRefresh = useCallback(() => {
+    if (userRef.current?.role) {
+      return fetchDashboardData(userRef.current.role, false);
     }
-  };
+    return Promise.resolve();
+  }, [fetchDashboardData]);
 
   if (loading) return <><GlobalStyles /><LoadingScreen /></>;
+
+  const dashboardProps = {
+    user,
+    stats,
+    isMobile,
+    lastUpdated,
+    onRefresh: handleRefresh,
+  };
 
   return (
     <>
       <GlobalStyles />
       {(() => {
         switch (user?.role) {
-          case 'SUPER_ADMIN': return <SuperAdminDashboard user={user} stats={stats} isMobile={isMobile} />;
-          case 'MANAGER':     return <ManagerDashboard    user={user} stats={stats} isMobile={isMobile} />;
-          case 'EMPLOYEE':    return <EmployeeDashboard   user={user} stats={stats} isMobile={isMobile} />;
-          case 'CASHIER':     return <CashierDashboard    user={user} stats={stats} isMobile={isMobile} />;
+          case 'SUPER_ADMIN': return <SuperAdminDashboard {...dashboardProps} />;
+          case 'MANAGER':     return <ManagerDashboard    {...dashboardProps} />;
+          case 'EMPLOYEE':    return <EmployeeDashboard   {...dashboardProps} />;
+          case 'CASHIER':     return <CashierDashboard    {...dashboardProps} />;
           default:            return <DefaultDashboard    user={user} />;
         }
       })()}
