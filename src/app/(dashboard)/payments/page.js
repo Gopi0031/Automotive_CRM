@@ -61,17 +61,40 @@ export default function PaymentsPage() {
   const [formData, setFormData] = useState({ invoiceId: '', amount: '', method: 'CASH', reference: '', notes: '' });
   const [stats, setStats] = useState({ totalCollected: 0, todayCollection: 0, weekCollection: 0, pendingInvoices: 0, paymentCount: 0 });
 
-  useEffect(() => { const c = () => setIsMobile(window.innerWidth < 768); c(); window.addEventListener('resize', c); return () => window.removeEventListener('resize', c); }, []);
-  useEffect(() => { const u = localStorage.getItem('user'); if (u) setCurrentUser(JSON.parse(u)); fetchInvoices(); }, []);
-  useEffect(() => { if (currentUser) fetchPayments(); }, [filters, currentUser]);
+  useEffect(() => {
+    const c = () => setIsMobile(window.innerWidth < 768);
+    c();
+    window.addEventListener('resize', c);
+    return () => window.removeEventListener('resize', c);
+  }, []);
 
-  const fetchInvoices = async () => {
+  useEffect(() => {
+    const u = localStorage.getItem('user');
+    if (u) {
+      try {
+        setCurrentUser(JSON.parse(u));
+      } catch {}
+    }
+  }, []);
+
+  // Fetch invoices (for the create payment form)
+  const fetchInvoices = useCallback(async () => {
     try {
-      const r = await fetch('/api/invoices'); const d = await r.json();
-      if (d.success) setInvoices((d.data || []).filter(i => i.status !== 'PAID' && i.status !== 'CANCELLED'));
-    } catch {}
-  };
+      const r = await fetch('/api/invoices');
+      if (!r.ok) return;
+      const d = await r.json();
+      if (d.success) {
+        const pending = (d.data || []).filter(i =>
+          i.status !== 'PAID' && i.status !== 'CANCELLED'
+        );
+        setInvoices(pending);
+      }
+    } catch (err) {
+      console.error('Failed to fetch invoices:', err);
+    }
+  }, []);
 
+  // Fetch payments
   const fetchPayments = useCallback(async () => {
     try {
       setLoading(true);
@@ -80,47 +103,133 @@ export default function PaymentsPage() {
       if (filters.method) p.append('method', filters.method);
       if (filters.startDate) p.append('startDate', filters.startDate);
       if (filters.endDate) p.append('endDate', filters.endDate);
+
       const r = await fetch(`/api/payments?${p}`);
+      if (!r.ok) {
+        const errData = await r.json().catch(() => ({}));
+        toast.error(errData.message || 'Failed to load payments');
+        return;
+      }
+
       const d = await r.json();
       if (d.success) {
-        setPayments(d.data || []);
         const data = d.data || [];
-        const today = new Date(); today.setHours(0, 0, 0, 0);
-        const week = new Date(); week.setDate(week.getDate() - 7); week.setHours(0, 0, 0, 0);
+        setPayments(data);
+
+        // Calculate stats
+        const now = new Date();
+        const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+        const weekStart = new Date(todayStart);
+        weekStart.setDate(weekStart.getDate() - 7);
+
         setStats({
           totalCollected: data.reduce((s, p) => s + (p.amount || 0), 0),
-          todayCollection: data.filter(p => new Date(p.createdAt) >= today).reduce((s, p) => s + (p.amount || 0), 0),
-          weekCollection: data.filter(p => new Date(p.createdAt) >= week).reduce((s, p) => s + (p.amount || 0), 0),
-          pendingInvoices: invoices.length,
+          todayCollection: data
+            .filter(p => new Date(p.createdAt) >= todayStart)
+            .reduce((s, p) => s + (p.amount || 0), 0),
+          weekCollection: data
+            .filter(p => new Date(p.createdAt) >= weekStart)
+            .reduce((s, p) => s + (p.amount || 0), 0),
           paymentCount: data.length,
+          pendingInvoices: 0, // Will be updated separately
         });
       }
-    } catch { toast.error('Failed to load'); }
-    finally { setLoading(false); }
-  }, [filters, invoices.length]);
+    } catch (err) {
+      console.error('Fetch payments error:', err);
+      toast.error('Failed to load payments');
+    } finally {
+      setLoading(false);
+    }
+  }, [filters]);
 
-  const resetForm = () => { setFormData({ invoiceId: '', amount: '', method: 'CASH', reference: '', notes: '' }); setSelectedInvoice(null); };
-  const openCreate = () => { resetForm(); fetchInvoices(); setShowModal(true); };
+  // Initial load
+  useEffect(() => {
+    fetchInvoices();
+  }, [fetchInvoices]);
+
+  // Fetch payments when user is available or filters change
+  useEffect(() => {
+    if (currentUser) {
+      fetchPayments();
+    }
+  }, [currentUser, fetchPayments]);
+
+  // Update pending invoices count when invoices change
+  useEffect(() => {
+    setStats(prev => ({ ...prev, pendingInvoices: invoices.length }));
+  }, [invoices]);
+
+  const resetForm = () => {
+    setFormData({ invoiceId: '', amount: '', method: 'CASH', reference: '', notes: '' });
+    setSelectedInvoice(null);
+  };
+
+  const openCreate = () => {
+    resetForm();
+    fetchInvoices(); // Refresh invoices list
+    setShowModal(true);
+  };
 
   const handleInvoiceSelect = id => {
     const inv = invoices.find(i => i.id === id);
     setSelectedInvoice(inv);
-    setFormData(p => ({ ...p, invoiceId: id, amount: inv ? (inv.total - inv.amountPaid).toFixed(2) : '' }));
+    setFormData(p => ({
+      ...p,
+      invoiceId: id,
+      amount: inv ? (inv.total - inv.amountPaid).toFixed(2) : '',
+    }));
   };
 
   const handleSubmit = async e => {
-    e.preventDefault(); setSubmitting(true);
+    e.preventDefault();
+
+    if (!formData.invoiceId) {
+      toast.error('Please select an invoice');
+      return;
+    }
+
+    const amount = parseFloat(formData.amount);
+    if (!amount || amount <= 0) {
+      toast.error('Please enter a valid amount');
+      return;
+    }
+
+    if (selectedInvoice) {
+      const balance = selectedInvoice.total - selectedInvoice.amountPaid;
+      if (amount > balance + 0.01) {
+        toast.error(`Amount exceeds balance of ₹${balance.toFixed(2)}`);
+        return;
+      }
+    }
+
+    setSubmitting(true);
     try {
       const r = await fetch('/api/payments', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ invoiceId: formData.invoiceId, amount: parseFloat(formData.amount) || 0, method: formData.method, reference: formData.reference || null, notes: formData.notes || null }),
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          invoiceId: formData.invoiceId,
+          amount,
+          method: formData.method,
+          reference: formData.reference || null,
+          notes: formData.notes || null,
+        }),
       });
       const d = await r.json();
-      if (!r.ok) { toast.error(d.message || 'Failed'); return; }
+      if (!r.ok) {
+        toast.error(d.message || 'Payment failed');
+        return;
+      }
       toast.success(d.message || 'Payment processed!');
-      resetForm(); setShowModal(false); fetchPayments(); fetchInvoices();
-    } catch { toast.error('Error'); }
-    finally { setSubmitting(false); }
+      resetForm();
+      setShowModal(false);
+      // Refresh both payments and invoices
+      await Promise.all([fetchPayments(), fetchInvoices()]);
+    } catch {
+      toast.error('Error processing payment');
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   const handleVoid = async payment => {
@@ -128,11 +237,20 @@ export default function PaymentsPage() {
     try {
       const r = await fetch(`/api/payments?id=${payment.id}`, { method: 'DELETE' });
       const d = await r.json();
-      if (!r.ok) { toast.error(d.message || 'Failed'); return; }
+      if (!r.ok) {
+        toast.error(d.message || 'Failed to void');
+        return;
+      }
       toast.success('Payment voided');
-      setShowVoidConfirm(null); setShowDetailModal(false); fetchPayments(); fetchInvoices();
-    } catch { toast.error('Error'); }
-    finally { setSubmitting(false); }
+      setShowVoidConfirm(null);
+      setShowDetailModal(false);
+      setSelectedPayment(null);
+      await Promise.all([fetchPayments(), fetchInvoices()]);
+    } catch {
+      toast.error('Error');
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   const canManage = ['SUPER_ADMIN', 'MANAGER', 'CASHIER'].includes(currentUser?.role);
@@ -241,12 +359,12 @@ export default function PaymentsPage() {
                         return (
                           <tr key={pay.id} className="py-row" style={{ borderBottom: i < payments.length - 1 ? '1px solid rgba(255,255,255,.04)' : 'none', animation: `pySlideUp .35s ease ${i * .03}s backwards` }}>
                             <td style={{ padding: '13px 18px' }}>
-                              <p style={{ margin: 0, fontWeight: 700, color: 'white', fontSize: 13 }}>{pay.invoice?.invoiceNumber}</p>
-                              <p style={{ margin: '1px 0 0', fontSize: 11, color: 'rgba(255,255,255,.35)' }}>{pay.invoice?.job?.jobNumber}</p>
+                              <p style={{ margin: 0, fontWeight: 700, color: 'white', fontSize: 13 }}>{pay.invoice?.invoiceNumber || '—'}</p>
+                              <p style={{ margin: '1px 0 0', fontSize: 11, color: 'rgba(255,255,255,.35)' }}>{pay.invoice?.job?.jobNumber || ''}</p>
                             </td>
                             <td style={{ padding: '13px 18px' }}>
-                              <p style={{ margin: 0, fontWeight: 600, color: 'white', fontSize: 13 }}>{pay.invoice?.customer?.name}</p>
-                              <p style={{ margin: '1px 0 0', fontSize: 11, color: 'rgba(255,255,255,.35)' }}>{pay.invoice?.customer?.phone}</p>
+                              <p style={{ margin: 0, fontWeight: 600, color: 'white', fontSize: 13 }}>{pay.invoice?.customer?.name || '—'}</p>
+                              <p style={{ margin: '1px 0 0', fontSize: 11, color: 'rgba(255,255,255,.35)' }}>{pay.invoice?.customer?.phone || ''}</p>
                             </td>
                             <td style={{ padding: '13px 18px' }}>
                               <p style={{ margin: 0, fontWeight: 800, color: '#6ee7b7', fontSize: 16 }}>₹{pay.amount?.toLocaleString('en-IN')}</p>
@@ -261,7 +379,7 @@ export default function PaymentsPage() {
                               <p style={{ margin: 0, fontSize: 13, color: 'white' }}>{new Date(pay.createdAt).toLocaleDateString('en-IN')}</p>
                               <p style={{ margin: '1px 0 0', fontSize: 10, color: 'rgba(255,255,255,.3)' }}>{new Date(pay.createdAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}</p>
                             </td>
-                            <td style={{ padding: '13px 18px', fontSize: 13, color: 'rgba(255,255,255,.5)' }}>{pay.receivedBy?.name}</td>
+                            <td style={{ padding: '13px 18px', fontSize: 13, color: 'rgba(255,255,255,.5)' }}>{pay.receivedBy?.name || '—'}</td>
                             <td style={{ padding: '13px 18px', textAlign: 'right' }}>
                               <button onClick={() => { setSelectedPayment(pay); setShowDetailModal(true); }} className="py-btn" style={{ padding: '6px 14px', borderRadius: 8, background: 'rgba(59,130,246,.1)', border: '1px solid rgba(59,130,246,.2)', color: '#93c5fd', fontSize: 12, fontWeight: 700 }}>View</button>
                             </td>
@@ -283,8 +401,8 @@ export default function PaymentsPage() {
                     <div key={pay.id} className="py-glass" onClick={() => { setSelectedPayment(pay); setShowDetailModal(true); }} style={{ padding: 16, cursor: 'pointer', animation: `pySlideUp .4s ease ${i * .03}s backwards` }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 10 }}>
                         <div>
-                          <p style={{ margin: 0, fontWeight: 700, color: 'white', fontSize: 14 }}>{pay.invoice?.invoiceNumber}</p>
-                          <p style={{ margin: '2px 0 0', fontSize: 12, color: 'rgba(255,255,255,.4)' }}>{pay.invoice?.customer?.name}</p>
+                          <p style={{ margin: 0, fontWeight: 700, color: 'white', fontSize: 14 }}>{pay.invoice?.invoiceNumber || '—'}</p>
+                          <p style={{ margin: '2px 0 0', fontSize: 12, color: 'rgba(255,255,255,.4)' }}>{pay.invoice?.customer?.name || '—'}</p>
                         </div>
                         <span style={{ padding: '3px 9px', borderRadius: 8, background: `${m.c}15`, border: `1px solid ${m.c}25`, color: m.c, fontSize: 10, fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: 3 }}>{m.icon} {m.l}</span>
                       </div>
@@ -296,7 +414,7 @@ export default function PaymentsPage() {
                         </div>
                       </div>
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingTop: 10, borderTop: '1px solid rgba(255,255,255,.05)' }}>
-                        <span style={{ fontSize: 12, color: 'rgba(255,255,255,.35)' }}>By: {pay.receivedBy?.name}</span>
+                        <span style={{ fontSize: 12, color: 'rgba(255,255,255,.35)' }}>By: {pay.receivedBy?.name || '—'}</span>
                         <span style={{ color: '#93c5fd', fontWeight: 600, fontSize: 12 }}>Details →</span>
                       </div>
                     </div>
@@ -320,10 +438,16 @@ export default function PaymentsPage() {
                   <select className="py-select" value={formData.invoiceId} onChange={e => handleInvoiceSelect(e.target.value)} required>
                     <option value="">Select invoice...</option>
                     {invoices.map(inv => (
-                      <option key={inv.id} value={inv.id}>{inv.invoiceNumber} - {inv.customer?.name} - Balance: ₹{(inv.total - inv.amountPaid).toLocaleString('en-IN')}</option>
+                      <option key={inv.id} value={inv.id}>
+                        {inv.invoiceNumber} - {inv.customer?.name} - Balance: ₹{(inv.total - inv.amountPaid).toLocaleString('en-IN')}
+                      </option>
                     ))}
                   </select>
-                  {!invoices.length && <p style={{ margin: '6px 0 0', fontSize: 11, color: '#fcd34d' }}>No pending invoices</p>}
+                  {invoices.length === 0 && (
+                    <p style={{ margin: '6px 0 0', fontSize: 11, color: '#fcd34d' }}>
+                      No pending invoices available
+                    </p>
+                  )}
                 </div>
 
                 {selectedInvoice && (
@@ -352,6 +476,11 @@ export default function PaymentsPage() {
                     placeholder="0.00" step="0.01" min="0.01"
                     max={selectedInvoice ? (selectedInvoice.total - selectedInvoice.amountPaid) : undefined} required
                     style={{ fontSize: 18, fontWeight: 700 }} />
+                  {selectedInvoice && formData.amount && parseFloat(formData.amount) >= (selectedInvoice.total - selectedInvoice.amountPaid) && (
+                    <p style={{ margin: '6px 0 0', fontSize: 11, color: '#6ee7b7', fontWeight: 600 }}>
+                      ✓ This will fully pay the invoice
+                    </p>
+                  )}
                 </div>
 
                 <div style={{ marginBottom: 16 }}>
@@ -389,10 +518,10 @@ export default function PaymentsPage() {
 
               <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 22, paddingTop: 18, borderTop: '1px solid rgba(255,255,255,.06)' }}>
                 <PBtn onClick={() => setShowModal(false)} label="Cancel" outline color="rgba(255,255,255,.4)" disabled={submitting} />
-                <button type="submit" disabled={submitting || !invoices.length} className="py-btn" style={{
+                <button type="submit" disabled={submitting || invoices.length === 0} className="py-btn" style={{
                   padding: '10px 22px', borderRadius: 12, background: 'linear-gradient(135deg,#8b5cf6,#6d28d9)',
                   border: 'none', color: 'white', fontSize: 13, fontWeight: 700,
-                  opacity: (submitting || !invoices.length) ? .5 : 1,
+                  opacity: (submitting || invoices.length === 0) ? .5 : 1,
                   display: 'flex', alignItems: 'center', gap: 8,
                   boxShadow: '0 4px 14px rgba(139,92,246,.3)',
                 }}>
@@ -433,12 +562,14 @@ export default function PaymentsPage() {
                   { l: 'Invoice', v: selectedPayment.invoice?.invoiceNumber },
                   { l: 'Customer', v: selectedPayment.invoice?.customer?.name },
                   { l: 'Phone', v: selectedPayment.invoice?.customer?.phone },
+                  { l: 'Vehicle', v: selectedPayment.invoice?.job?.vehicle ? `${selectedPayment.invoice.job.vehicle.make} ${selectedPayment.invoice.job.vehicle.model} - ${selectedPayment.invoice.job.vehicle.licensePlate}` : null },
                   ...(selectedPayment.reference ? [{ l: 'Reference', v: selectedPayment.reference }] : []),
                   { l: 'Received By', v: selectedPayment.receivedBy?.name },
-                ].map((r, i, arr) => (
+                  { l: 'Branch', v: selectedPayment.invoice?.branch?.name },
+                ].filter(r => r.v).map((r, i, arr) => (
                   <div key={r.l} style={{ display: 'flex', justifyContent: 'space-between', padding: '10px 14px', borderBottom: i < arr.length - 1 ? '1px solid rgba(255,255,255,.05)' : 'none', background: 'rgba(255,255,255,.02)' }}>
                     <span style={{ fontSize: 12, color: 'rgba(255,255,255,.4)' }}>{r.l}</span>
-                    <span style={{ fontSize: 13, fontWeight: 700, color: 'white' }}>{r.v || '—'}</span>
+                    <span style={{ fontSize: 13, fontWeight: 700, color: 'white', textAlign: 'right', maxWidth: '60%' }}>{r.v}</span>
                   </div>
                 ))}
               </div>
@@ -469,10 +600,10 @@ export default function PaymentsPage() {
             <div style={{ width: 56, height: 56, borderRadius: '50%', background: 'rgba(239,68,68,.12)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px', fontSize: 26 }}>⚠️</div>
             <h3 style={{ margin: '0 0 6px', fontSize: 17, fontWeight: 800, color: 'white' }}>Void Payment?</h3>
             <p style={{ margin: '0 0 20px', fontSize: 13, color: 'rgba(255,255,255,.45)' }}>
-              Void <span style={{ color: '#6ee7b7', fontWeight: 700 }}>₹{showVoidConfirm.amount?.toLocaleString('en-IN')}</span>? This cannot be undone.
+              Void <span style={{ color: '#6ee7b7', fontWeight: 700 }}>₹{showVoidConfirm.amount?.toLocaleString('en-IN')}</span> for {showVoidConfirm.invoice?.invoiceNumber}? This cannot be undone.
             </p>
             <div style={{ display: 'flex', gap: 10 }}>
-              <PBtn onClick={() => setShowVoidConfirm(null)} label="Cancel" outline color="rgba(255,255,255,.4)" style={{ flex: 1 }} />
+              <PBtn onClick={() => setShowVoidConfirm(null)} label="Cancel" outline color="rgba(255,255,255,.4)" style={{ flex: 1 }} disabled={submitting} />
               <button onClick={() => handleVoid(showVoidConfirm)} disabled={submitting} className="py-btn" style={{
                 flex: 1, padding: '10px 0', borderRadius: 12, background: 'linear-gradient(135deg,#ef4444,#dc2626)',
                 border: 'none', color: 'white', fontSize: 13, fontWeight: 700, opacity: submitting ? .6 : 1,
@@ -488,7 +619,7 @@ export default function PaymentsPage() {
   );
 }
 
-// ─── SHARED ───
+// ─── SHARED COMPONENTS ───
 function POvl({ children, onClose }) {
   return (
     <div className="py-overlay" onClick={onClose} style={{ position: 'fixed', inset: 0, zIndex: 100, background: 'rgba(0,0,0,.65)', backdropFilter: 'blur(8px)', WebkitBackdropFilter: 'blur(8px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>

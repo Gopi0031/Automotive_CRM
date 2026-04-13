@@ -347,7 +347,7 @@ function SidebarHeader({ rc, collapsed, isMobile, isTablet, mounted, onCollapse,
               display:'block', fontSize:16, fontWeight:900,
               color:'white', letterSpacing:'-.6px', lineHeight:1.1,
             }}>
-              Auto<span style={{ color:rc.c }}>Bill</span>
+              Billing<span style={{ color:rc.c }}>System</span>
             </span>
             <span style={{
               display:'block', fontSize:9,

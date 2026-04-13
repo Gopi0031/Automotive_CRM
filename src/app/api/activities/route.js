@@ -57,9 +57,10 @@ export async function GET(req) {
     );
   } catch (error) {
     console.error('Fetch activities error:', error);
+    // Return empty data instead of 500 - activities should never break the dashboard
     return NextResponse.json(
-      { success: false, message: 'Internal server error' },
-      { status: 500 }
+      { success: true, data: [], message: 'Activities temporarily unavailable' },
+      { status: 200 }
     );
   } finally {
     await prisma.$disconnect();

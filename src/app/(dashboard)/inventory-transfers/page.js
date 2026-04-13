@@ -86,6 +86,10 @@ export default function InventoryTransfersPage() {
   });
   const [stats, setStats] = useState({ total: 0, pending: 0, inTransit: 0, completed: 0 });
 
+  const isMgr = ['SUPER_ADMIN', 'MANAGER'].includes(currentUser?.role);
+  const isSA = currentUser?.role === 'SUPER_ADMIN';
+  const userBranchId = currentUser?.branchId || currentUser?.branch?.id;
+
   useEffect(() => {
     const c = () => setIsMobile(window.innerWidth < 768);
     c(); window.addEventListener('resize', c);
@@ -94,9 +98,52 @@ export default function InventoryTransfersPage() {
 
   useEffect(() => {
     const u = localStorage.getItem('user');
-    if (u) setCurrentUser(JSON.parse(u));
+    if (u) {
+      try {
+        const parsed = JSON.parse(u);
+        setCurrentUser(parsed);
+        // Fetch full profile to ensure branchId is available
+        if (!parsed.branchId && !parsed.branch?.id && parsed.role !== 'SUPER_ADMIN') {
+          fetchUserProfile(parsed);
+        }
+      } catch (parseErr) {
+        console.error('Failed to parse user from localStorage:', parseErr);
+        localStorage.removeItem('user');
+      }
+    }
     fetchInitial();
   }, []);
+
+  const fetchUserProfile = async (fallbackUser) => {
+    try {
+      const r = await fetch('/api/auth/profile');
+      if (!r.ok) {
+        console.warn(`Profile endpoint returned ${r.status}`);
+        // Fallback: try /api/auth/me
+        const r2 = await fetch('/api/auth/me');
+        if (!r2.ok) return;
+        const contentType2 = r2.headers.get('content-type');
+        if (!contentType2 || !contentType2.includes('application/json')) return;
+        const d2 = await r2.json();
+        if (d2.success && d2.user) {
+          const fullUser = { ...fallbackUser, ...d2.user };
+          setCurrentUser(fullUser);
+          localStorage.setItem('user', JSON.stringify(fullUser));
+        }
+        return;
+      }
+      const contentType = r.headers.get('content-type');
+      if (!contentType || !contentType.includes('application/json')) return;
+      const d = await r.json();
+      if (d.success && d.data) {
+        const fullUser = { ...fallbackUser, ...d.data };
+        setCurrentUser(fullUser);
+        localStorage.setItem('user', JSON.stringify(fullUser));
+      }
+    } catch (err) {
+      console.error('Failed to fetch user profile:', err);
+    }
+  };
 
   useEffect(() => { if (currentUser) fetchTransfers(); }, [filters, currentUser]);
 
@@ -132,7 +179,10 @@ export default function InventoryTransfersPage() {
   }, [filters]);
 
   const resetForm = () => setFormData({
-    fromBranchId: '', toBranchId: currentUser?.branchId || '', notes: '', urgency: 'MEDIUM',
+    fromBranchId: '',
+    toBranchId: isSA ? '' : (userBranchId || ''),
+    notes: '',
+    urgency: 'MEDIUM',
     items: [{ partId: '', quantity: 1, notes: '' }],
   });
 
@@ -142,16 +192,36 @@ export default function InventoryTransfersPage() {
 
   const sourceParts = () => formData.fromBranchId ? parts.filter(p => p.branchId === formData.fromBranchId && p.quantity > 0) : [];
 
+  // Get available source branches (excluding user's own branch for non-SA)
+  const getSourceBranches = () => {
+    if (isSA) return branches;
+    if (!userBranchId) return branches; // Show all if branchId unknown
+    return branches.filter(b => b.id !== userBranchId);
+  };
+
+  // Get available destination branches (excluding source branch)
+  const getDestinationBranches = () => {
+    return branches.filter(b => b.id !== formData.fromBranchId);
+  };
+
   const handleCreate = async (e) => {
     e.preventDefault();
-    if (!formData.fromBranchId || !formData.toBranchId) { toast.error('Select both branches'); return; }
+    const finalToBranchId = isSA ? formData.toBranchId : (userBranchId || formData.toBranchId);
+    if (!formData.fromBranchId || !finalToBranchId) { toast.error('Select both branches'); return; }
+    if (formData.fromBranchId === finalToBranchId) { toast.error('Source and destination must be different'); return; }
     const valid = formData.items.filter(i => i.partId && i.quantity > 0);
     if (!valid.length) { toast.error('Add at least one item'); return; }
     setSubmitting(true);
     try {
       const r = await fetch('/api/inventory-transfers', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ fromBranchId: formData.fromBranchId, toBranchId: formData.toBranchId, notes: formData.notes, urgency: formData.urgency, items: valid }),
+        body: JSON.stringify({
+          fromBranchId: formData.fromBranchId,
+          toBranchId: finalToBranchId,
+          notes: formData.notes,
+          urgency: formData.urgency,
+          items: valid,
+        }),
       });
       const d = await r.json();
       if (!r.ok) { toast.error(d.message || 'Failed'); return; }
@@ -179,14 +249,15 @@ export default function InventoryTransfersPage() {
 
   const openAction = (t, a) => { setSelectedTransfer(t); setActionType(a); setShowActionModal(true); };
 
-  const isMgr = ['SUPER_ADMIN', 'MANAGER'].includes(currentUser?.role);
-  const isSA = currentUser?.role === 'SUPER_ADMIN';
-  const canApproveReject = t => t.status === 'REQUESTED' && (isSA || t.fromBranchId === currentUser?.branchId);
-  const canSend = t => t.status === 'APPROVED' && (isSA || t.fromBranchId === currentUser?.branchId);
-  const canReceive = t => t.status === 'IN_TRANSIT' && (isSA || t.toBranchId === currentUser?.branchId);
+  const canApproveReject = t => t.status === 'REQUESTED' && (isSA || t.fromBranchId === userBranchId);
+  const canSend = t => t.status === 'APPROVED' && (isSA || t.fromBranchId === userBranchId);
+  const canReceive = t => t.status === 'IN_TRANSIT' && (isSA || t.toBranchId === userBranchId);
 
-  const incoming = transfers.filter(t => t.toBranchId === currentUser?.branchId);
-  const outgoing = transfers.filter(t => t.fromBranchId === currentUser?.branchId);
+  const incoming = transfers.filter(t => t.toBranchId === userBranchId);
+  const outgoing = transfers.filter(t => t.fromBranchId === userBranchId);
+
+  const userBranchName = branches.find(b => b.id === userBranchId)?.name;
+  const sourceBranchList = getSourceBranches();
 
   const STATS = [
     { label: 'Total Transfers', v: stats.total, icon: '🔄', grad: 'linear-gradient(135deg,#8b5cf6,#6d28d9)' },
@@ -212,6 +283,9 @@ export default function InventoryTransfersPage() {
               </div>
               <p style={{ margin: 0, fontSize: 13, color: 'rgba(255,255,255,.4)', fontWeight: 500 }}>
                 Transfer items between branches
+                {userBranchName && !isSA && (
+                  <span style={{ color: 'rgba(255,255,255,.25)', marginLeft: 6 }}>• {userBranchName}</span>
+                )}
               </p>
             </div>
             {isMgr && (
@@ -296,7 +370,7 @@ export default function InventoryTransfersPage() {
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
             {transfers.map((t, i) => (
-              <TransferCard key={t.id} transfer={t} index={i} currentUser={currentUser} isMobile={isMobile}
+              <TransferCard key={t.id} transfer={t} index={i} userBranchId={userBranchId} isMobile={isMobile}
                 canAR={canApproveReject(t)} canS={canSend(t)} canR={canReceive(t)}
                 onView={() => { setSelectedTransfer(t); setShowDetailModal(true); }}
                 onApprove={() => openAction(t, 'approve')}
@@ -313,43 +387,123 @@ export default function InventoryTransfersPage() {
         <Overlay onClose={() => { setShowCreateModal(false); resetForm(); }}>
           <div style={{ maxWidth: 620, width: '100%' }}>
             <MHead grad="linear-gradient(135deg,#8b5cf6,#6d28d9)" title="🔄 Request Transfer"
-              sub="Request items from another branch" onClose={() => { setShowCreateModal(false); resetForm(); }} />
+              sub={isSA ? 'Transfer items between any branches' : `Request items to ${userBranchName || 'your branch'}`}
+              onClose={() => { setShowCreateModal(false); resetForm(); }} />
             <form onSubmit={handleCreate} style={{ padding: isMobile ? 20 : 24, background: 'rgba(15,23,42,.97)', borderRadius: '0 0 20px 20px', border: '1px solid rgba(255,255,255,.06)', borderTop: 'none' }}>
               <div style={{ maxHeight: 'calc(72vh - 200px)', overflowY: 'auto', paddingRight: 4 }}>
+
+                {/* Branch Info Banner for Manager */}
+                {!isSA && userBranchId && (
+                  <div style={{
+                    padding: '12px 16px', marginBottom: 18, borderRadius: 12,
+                    background: 'rgba(139,92,246,.08)',
+                    border: '1px solid rgba(139,92,246,.2)',
+                    display: 'flex', alignItems: 'center', gap: 10,
+                  }}>
+                    <span style={{ fontSize: 20 }}>🏢</span>
+                    <div>
+                      <p style={{ margin: 0, fontSize: 12, color: 'rgba(255,255,255,.45)', fontWeight: 600 }}>
+                        Requesting items to
+                      </p>
+                      <p style={{ margin: '2px 0 0', fontSize: 15, fontWeight: 800, color: '#c4b5fd' }}>
+                        {userBranchName || 'Your Branch'}
+                      </p>
+                    </div>
+                  </div>
+                )}
+
                 {/* Branches */}
-                <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr auto 1fr', gap: 14, alignItems: 'end', marginBottom: 18 }}>
+                <div style={{
+                  display: 'grid',
+                  gridTemplateColumns: isMobile ? '1fr' : (isSA ? '1fr auto 1fr' : '1fr'),
+                  gap: 14, alignItems: 'end', marginBottom: 18,
+                }}>
+                  {/* From Branch (Source) */}
                   <div>
-                    <label className="tr-label">From Branch <span style={{ color: '#8b5cf6' }}>*</span></label>
+                    <label className="tr-label">
+                      From Branch (Source) <span style={{ color: '#8b5cf6' }}>*</span>
+                    </label>
                     <select className="tr-select" value={formData.fromBranchId}
-                      onChange={e => setFormData(p => ({ ...p, fromBranchId: e.target.value, items: [{ partId: '', quantity: 1, notes: '' }] }))} required>
-                      <option value="">Select source...</option>
-                      {(isSA ? branches : branches.filter(b => b.id !== currentUser?.branchId)).map(b => (
-                        <option key={b.id} value={b.id}>{b.name}</option>
+                      onChange={e => setFormData(p => ({
+                        ...p,
+                        fromBranchId: e.target.value,
+                        items: [{ partId: '', quantity: 1, notes: '' }],
+                      }))} required>
+                      <option value="">Select source branch...</option>
+                      {sourceBranchList.map(b => (
+                        <option key={b.id} value={b.id}>
+                          {b.name}{b.location ? ` — ${b.location}` : ''}
+                        </option>
                       ))}
                     </select>
+                    {!isSA && userBranchId && sourceBranchList.length === 0 && (
+                      <p style={{ margin: '6px 0 0', fontSize: 11, color: '#fca5a5' }}>
+                        No other branches available. At least 2 branches are needed for transfers.
+                      </p>
+                    )}
+                    {!isSA && !userBranchId && (
+                      <p style={{ margin: '6px 0 0', fontSize: 11, color: '#fcd34d' }}>
+                        ⚠️ Your branch assignment could not be detected. Please log out and log back in.
+                      </p>
+                    )}
                   </div>
-                  {!isMobile && (
+
+                  {/* Arrow (only for SA with both selects) */}
+                  {isSA && !isMobile && (
                     <div style={{ paddingBottom: 8, display: 'flex', justifyContent: 'center' }}>
                       <span style={{ fontSize: 22, color: '#8b5cf6' }}>→</span>
                     </div>
                   )}
-                  <div>
-                    <label className="tr-label">To Branch <span style={{ color: '#8b5cf6' }}>*</span></label>
-                    {isSA ? (
+
+                  {/* To Branch (Destination) - only SA can select */}
+                  {isSA && (
+                    <div>
+                      <label className="tr-label">
+                        To Branch (Destination) <span style={{ color: '#8b5cf6' }}>*</span>
+                      </label>
                       <select className="tr-select" value={formData.toBranchId}
                         onChange={e => setFormData(p => ({ ...p, toBranchId: e.target.value }))} required>
                         <option value="">Select destination...</option>
-                        {branches.filter(b => b.id !== formData.fromBranchId).map(b => (
-                          <option key={b.id} value={b.id}>{b.name}</option>
+                        {getDestinationBranches().map(b => (
+                          <option key={b.id} value={b.id}>
+                            {b.name}{b.location ? ` — ${b.location}` : ''}
+                          </option>
                         ))}
                       </select>
-                    ) : (
-                      <div style={{ padding: '11px 14px', borderRadius: 12, background: 'rgba(255,255,255,.03)', border: '1px solid rgba(255,255,255,.07)', color: 'white', fontWeight: 600, fontSize: 14 }}>
-                        {branches.find(b => b.id === currentUser?.branchId)?.name || 'Your Branch'}
-                      </div>
-                    )}
-                  </div>
+                    </div>
+                  )}
                 </div>
+
+                {/* Visual route indicator for Manager */}
+                {!isSA && formData.fromBranchId && (
+                  <div style={{
+                    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 14,
+                    padding: 16, borderRadius: 14,
+                    background: 'rgba(255,255,255,.025)',
+                    border: '1px solid rgba(255,255,255,.06)',
+                    marginBottom: 18,
+                  }}>
+                    <div style={{ textAlign: 'center', flex: 1 }}>
+                      <p style={{ margin: '0 0 3px', fontSize: 10, color: 'rgba(255,255,255,.35)', fontWeight: 600, textTransform: 'uppercase' }}>From</p>
+                      <p style={{ margin: 0, fontWeight: 700, color: '#fcd34d', fontSize: 14 }}>
+                        {branches.find(b => b.id === formData.fromBranchId)?.name || 'Source'}
+                      </p>
+                    </div>
+                    <div style={{
+                      width: 40, height: 40, borderRadius: '50%',
+                      background: 'linear-gradient(135deg,#8b5cf6,#6d28d9)',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+                    }}>
+                      <span style={{ color: 'white', fontSize: 16 }}>→</span>
+                    </div>
+                    <div style={{ textAlign: 'center', flex: 1 }}>
+                      <p style={{ margin: '0 0 3px', fontSize: 10, color: 'rgba(255,255,255,.35)', fontWeight: 600, textTransform: 'uppercase' }}>To</p>
+                      <p style={{ margin: 0, fontWeight: 700, color: '#6ee7b7', fontSize: 14 }}>
+                        {userBranchName || 'Your Branch'}
+                      </p>
+                    </div>
+                  </div>
+                )}
 
                 {/* Urgency */}
                 <div style={{ marginBottom: 18 }}>
@@ -389,7 +543,7 @@ export default function InventoryTransfersPage() {
 
                   {!formData.fromBranchId ? (
                     <div style={{ padding: 24, borderRadius: 12, background: 'rgba(255,255,255,.02)', border: '1px solid rgba(255,255,255,.05)', textAlign: 'center', color: 'rgba(255,255,255,.35)', fontSize: 13 }}>
-                      Select a source branch to see items
+                      Select a source branch to see available items
                     </div>
                   ) : sourceParts().length === 0 ? (
                     <div style={{ padding: 24, borderRadius: 12, background: 'rgba(245,158,11,.06)', border: '1px solid rgba(245,158,11,.15)', textAlign: 'center', color: '#fcd34d', fontSize: 13 }}>
@@ -438,7 +592,7 @@ export default function InventoryTransfersPage() {
 
               <MFoot onCancel={() => { setShowCreateModal(false); resetForm(); }} submitting={submitting}
                 label="Submit Request" grad="linear-gradient(135deg,#8b5cf6,#6d28d9)" glow="rgba(139,92,246,.3)"
-                disabled={!formData.fromBranchId} />
+                disabled={!formData.fromBranchId || (!isSA && !userBranchId)} />
             </form>
           </div>
         </Overlay>
@@ -455,10 +609,10 @@ export default function InventoryTransfersPage() {
                   <h2 style={{ margin: '0 0 10px', fontSize: 20, fontWeight: 800, color: 'white' }}>{selectedTransfer.transferNumber}</h2>
                   <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                     <Badge {...gSC(selectedTransfer.status)} />
-                    <Badge text={selectedTransfer.toBranchId === currentUser?.branchId ? '📥 Incoming' : '📤 Outgoing'}
-                      bg={selectedTransfer.toBranchId === currentUser?.branchId ? 'rgba(16,185,129,.12)' : 'rgba(245,158,11,.12)'}
-                      bd={selectedTransfer.toBranchId === currentUser?.branchId ? 'rgba(16,185,129,.25)' : 'rgba(245,158,11,.25)'}
-                      c={selectedTransfer.toBranchId === currentUser?.branchId ? '#6ee7b7' : '#fcd34d'} />
+                    <Badge text={selectedTransfer.toBranchId === userBranchId ? '📥 Incoming' : '📤 Outgoing'}
+                      bg={selectedTransfer.toBranchId === userBranchId ? 'rgba(16,185,129,.12)' : 'rgba(245,158,11,.12)'}
+                      bd={selectedTransfer.toBranchId === userBranchId ? 'rgba(16,185,129,.25)' : 'rgba(245,158,11,.25)'}
+                      c={selectedTransfer.toBranchId === userBranchId ? '#6ee7b7' : '#fcd34d'} />
                   </div>
                 </div>
                 <CloseBtn onClick={() => { setShowDetailModal(false); setSelectedTransfer(null); }} />
@@ -636,10 +790,10 @@ function ActionModal({ transfer, actionType, isMobile, onClose, onSubmit, submit
 }
 
 // ─── TRANSFER CARD ───
-function TransferCard({ transfer, index, currentUser, isMobile, canAR, canS, canR, onView, onApprove, onReject, onSend, onReceive }) {
+function TransferCard({ transfer, index, userBranchId, isMobile, canAR, canS, canR, onView, onApprove, onReject, onSend, onReceive }) {
   const sc = gSC(transfer.status);
   const uc = gUC(transfer.urgency);
-  const isIn = transfer.toBranchId === currentUser?.branchId;
+  const isIn = transfer.toBranchId === userBranchId;
 
   return (
     <div className="tr-glass tr-card-hover" onClick={onView} style={{ overflow: 'hidden', cursor: 'pointer', animation: `trSlideUp .4s ease ${index * .04}s backwards` }}>

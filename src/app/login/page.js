@@ -89,17 +89,20 @@ function ParticleField() {
         this.speedX *= 0.98;
         this.life--;
       }
-      draw() {
-        const fade = this.life / this.maxLife;
-        const gradient = ctx.createRadialGradient(this.x, this.y, 0, this.x, this.y, this.size * fade);
-        gradient.addColorStop(0, `rgba(255, 220, 120, ${fade})`);
-        gradient.addColorStop(0.5, `rgba(100, 180, 255, ${fade * 0.6})`);
-        gradient.addColorStop(1, `rgba(59, 130, 246, 0)`);
-        ctx.beginPath();
-        ctx.arc(this.x, this.y, this.size * fade * 2, 0, Math.PI * 2);
-        ctx.fillStyle = gradient;
-        ctx.fill();
-      }
+      // In the Spark class draw() method, line 94
+draw() {
+  const fade = this.life / this.maxLife;
+  const radius = Math.max(0, this.size * fade);
+  if (radius <= 0) return; // Skip drawing if radius is zero or negative
+  const gradient = ctx.createRadialGradient(this.x, this.y, 0, this.x, this.y, radius);
+  gradient.addColorStop(0, `rgba(255, 220, 120, ${fade})`);
+  gradient.addColorStop(0.5, `rgba(100, 180, 255, ${fade * 0.6})`);
+  gradient.addColorStop(1, `rgba(59, 130, 246, 0)`);
+  ctx.beginPath();
+  ctx.arc(this.x, this.y, radius * 2, 0, Math.PI * 2);
+  ctx.fillStyle = gradient;
+  ctx.fill();
+}
     }
 
     const count = Math.min(80, Math.floor((canvas.width * canvas.height) / 15000));
