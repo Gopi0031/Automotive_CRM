@@ -115,7 +115,8 @@ export async function POST(req) {
       );
     }
 
-    if (!['SUPER_ADMIN', 'ADMIN', 'MANAGER'].includes(currentUser.role)) {
+    // ✅ UPDATED: Added EMPLOYEE to allowed roles for customer creation
+    if (!['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'EMPLOYEE'].includes(currentUser.role)) {
       return NextResponse.json(
         { success: false, message: 'You do not have permission to create customers' },
         { status: 403 }

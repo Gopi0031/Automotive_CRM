@@ -89,6 +89,23 @@ function initials(name) {
   return name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2);
 }
 
+// ✅ ADDED: Helper to get current user from localStorage
+function getCurrentUser() {
+  try {
+    const raw = localStorage.getItem('user');
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+
+// ✅ ADDED: Roles that can create customers
+const CAN_CREATE_ROLES = ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'EMPLOYEE'];
+// ✅ ADDED: Roles that can delete customers
+const CAN_DELETE_ROLES = ['SUPER_ADMIN', 'ADMIN', 'MANAGER'];
+// ✅ ADDED: Roles that can edit customers
+const CAN_EDIT_ROLES = ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'EMPLOYEE'];
+
 export default function CustomersPage() {
   const [customers, setCustomers] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -102,7 +119,26 @@ export default function CustomersPage() {
     name: '', email: '', phone: '', address: '', city: '', state: '', pincode: '',
   });
 
-  useEffect(() => { fetchCustomers(); }, []);
+  // ✅ ADDED: Edit state
+  const [editCustomer, setEditCustomer] = useState(null);
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [editFormData, setEditFormData] = useState({
+    name: '', email: '', phone: '', address: '', city: '', state: '', pincode: '',
+  });
+  const [editSubmitting, setEditSubmitting] = useState(false);
+
+  // ✅ ADDED: Current user state
+  const [currentUser, setCurrentUser] = useState(null);
+
+  useEffect(() => {
+    setCurrentUser(getCurrentUser());
+    fetchCustomers();
+  }, []);
+
+  const userRole = currentUser?.role || '';
+  const canCreate = CAN_CREATE_ROLES.includes(userRole);
+  const canDelete = CAN_DELETE_ROLES.includes(userRole);
+  const canEdit = CAN_EDIT_ROLES.includes(userRole);
 
   const fetchCustomers = async () => {
     try {
@@ -141,6 +177,50 @@ export default function CustomersPage() {
       if (d.success) { toast.success('Deleted'); setDeleteId(null); fetchCustomers(); }
       else toast.error(d.message || 'Failed');
     } catch { toast.error('Error'); }
+  };
+
+  // ✅ ADDED: Edit handlers
+  const openEditModal = (customer) => {
+    setEditCustomer(customer);
+    setEditFormData({
+      name: customer.name || '',
+      email: customer.email || '',
+      phone: customer.phone || '',
+      address: customer.address || '',
+      city: customer.city || '',
+      state: customer.state || '',
+      pincode: customer.pincode || '',
+    });
+    setShowEditModal(true);
+  };
+
+  const handleEditChange = (e) => setEditFormData(p => ({ ...p, [e.target.name]: e.target.value }));
+
+  const handleEditSubmit = async (e) => {
+    e.preventDefault();
+    if (!editCustomer) return;
+    setEditSubmitting(true);
+    try {
+      const r = await fetch(`/api/customers/${editCustomer.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(editFormData),
+      });
+      const d = await r.json();
+      if (!r.ok) { toast.error(d.message || 'Failed to update'); return; }
+      toast.success('Customer updated!');
+      setShowEditModal(false);
+      setEditCustomer(null);
+      fetchCustomers();
+    } catch { toast.error('An error occurred'); }
+    finally { setEditSubmitting(false); }
+  };
+
+  // ✅ ADDED: Check if employee can edit this specific customer
+  const canEditCustomer = (customer) => {
+    if (['SUPER_ADMIN', 'ADMIN', 'MANAGER'].includes(userRole)) return true;
+    if (userRole === 'EMPLOYEE' && customer.createdBy === currentUser?.id) return true;
+    return false;
   };
 
   const filtered = customers.filter(c =>
@@ -182,18 +262,21 @@ export default function CustomersPage() {
               Manage your customer database
             </p>
           </div>
-          <button onClick={() => setShowModal(true)} className="cp-btn" style={{
-            display: 'flex', alignItems: 'center', gap: 8,
-            padding: '11px 22px', borderRadius: 14,
-            background: 'linear-gradient(135deg,#3b82f6,#1d4ed8)',
-            color: 'white', border: 'none', fontSize: 14, fontWeight: 700,
-            cursor: 'pointer', boxShadow: '0 4px 18px rgba(59,130,246,.35)',
-          }}>
-            <svg style={{ width: 18, height: 18 }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 6v12m6-6H6" />
-            </svg>
-            Add Customer
-          </button>
+          {/* ✅ UPDATED: Show Add button based on role permission */}
+          {canCreate && (
+            <button onClick={() => setShowModal(true)} className="cp-btn" style={{
+              display: 'flex', alignItems: 'center', gap: 8,
+              padding: '11px 22px', borderRadius: 14,
+              background: 'linear-gradient(135deg,#3b82f6,#1d4ed8)',
+              color: 'white', border: 'none', fontSize: 14, fontWeight: 700,
+              cursor: 'pointer', boxShadow: '0 4px 18px rgba(59,130,246,.35)',
+            }}>
+              <svg style={{ width: 18, height: 18 }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 6v12m6-6H6" />
+              </svg>
+              Add Customer
+            </button>
+          )}
         </div>
 
         {/* ─── Stats ─── */}
@@ -271,7 +354,8 @@ export default function CustomersPage() {
             <p style={{ margin: '0 0 24px', fontSize: 14, color: 'rgba(255,255,255,.4)' }}>
               {search ? 'Try different search terms' : 'Add your first customer'}
             </p>
-            {!search && (
+            {/* ✅ UPDATED: Show Add button based on role permission */}
+            {!search && canCreate && (
               <button onClick={() => setShowModal(true)} className="cp-btn" style={{
                 padding: '11px 24px', borderRadius: 12,
                 background: 'linear-gradient(135deg,#3b82f6,#1d4ed8)',
@@ -314,7 +398,15 @@ export default function CustomersPage() {
                             display: 'flex', alignItems: 'center', justifyContent: 'center',
                             color: 'white', fontSize: 13, fontWeight: 800, flexShrink: 0,
                           }}>{initials(c.name)}</div>
-                          <span style={{ fontWeight: 700, color: 'white', fontSize: 14 }}>{c.name}</span>
+                          <div>
+                            <span style={{ fontWeight: 700, color: 'white', fontSize: 14, display: 'block' }}>{c.name}</span>
+                            {/* ✅ ADDED: Show creator info for technicians */}
+                            {c.createdByUser && (
+                              <span style={{ fontSize: 10, color: 'rgba(255,255,255,.3)' }}>
+                                by {c.createdByUser.name}
+                              </span>
+                            )}
+                          </div>
                         </div>
                       </td>
                       <td style={{ padding: '14px 18px', borderBottom: '1px solid rgba(255,255,255,.04)', fontSize: 13, color: 'rgba(255,255,255,.55)', fontFamily: 'monospace' }}>
@@ -346,13 +438,26 @@ export default function CustomersPage() {
                               color: '#93c5fd', fontSize: 12, fontWeight: 700,
                               cursor: 'pointer',
                             }}>View</button>
-                          <button onClick={() => setDeleteId(c.id)}
-                            className="cp-btn" style={{
-                              padding: '6px 14px', borderRadius: 8,
-                              background: 'rgba(239,68,68,.08)', border: '1px solid rgba(239,68,68,.15)',
-                              color: '#fca5a5', fontSize: 12, fontWeight: 700,
-                              cursor: 'pointer',
-                            }}>Delete</button>
+                          {/* ✅ ADDED: Edit button with permission check */}
+                          {canEditCustomer(c) && (
+                            <button onClick={() => openEditModal(c)}
+                              className="cp-btn" style={{
+                                padding: '6px 14px', borderRadius: 8,
+                                background: 'rgba(245,158,11,.1)', border: '1px solid rgba(245,158,11,.2)',
+                                color: '#fcd34d', fontSize: 12, fontWeight: 700,
+                                cursor: 'pointer',
+                              }}>Edit</button>
+                          )}
+                          {/* ✅ UPDATED: Delete button with permission check */}
+                          {canDelete && (
+                            <button onClick={() => setDeleteId(c.id)}
+                              className="cp-btn" style={{
+                                padding: '6px 14px', borderRadius: 8,
+                                background: 'rgba(239,68,68,.08)', border: '1px solid rgba(239,68,68,.15)',
+                                color: '#fca5a5', fontSize: 12, fontWeight: 700,
+                                cursor: 'pointer',
+                              }}>Delete</button>
+                          )}
                         </div>
                       </td>
                     </tr>
@@ -398,7 +503,7 @@ export default function CustomersPage() {
                 </div>
                 <div style={{ gridColumn: 'span 2' }}>
                   <label className="cp-label">Email</label>
-                  <input className="cp-input" type="email" name="email" value={formData.email} onChange={handleChange} placeholder="custmer@mail.com" />
+                  <input className="cp-input" type="email" name="email" value={formData.email} onChange={handleChange} placeholder="customer@mail.com" />
                 </div>
                 <div style={{ gridColumn: 'span 2' }}>
                   <label className="cp-label">Address</label>
@@ -449,6 +554,91 @@ export default function CustomersPage() {
         </ModalBg>
       )}
 
+      {/* ─── Edit Customer Modal ─── */}
+      {showEditModal && editCustomer && (
+        <ModalBg onClose={() => { setShowEditModal(false); setEditCustomer(null); }}>
+          <div style={{ maxWidth: 540, width: '100%' }}>
+            <div style={{
+              padding: '20px 24px',
+              background: 'linear-gradient(135deg,#f59e0b,#d97706)',
+              borderRadius: '20px 20px 0 0',
+              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+            }}>
+              <h2 style={{ margin: 0, fontSize: 18, fontWeight: 800, color: 'white' }}>
+                ✏️ Edit Customer
+              </h2>
+              <CloseBtn onClick={() => { setShowEditModal(false); setEditCustomer(null); }} />
+            </div>
+
+            <form onSubmit={handleEditSubmit} style={{
+              padding: 24,
+              background: 'rgba(15,23,42,.97)',
+              borderRadius: '0 0 20px 20px',
+              border: '1px solid rgba(255,255,255,.06)',
+              borderTop: 'none',
+            }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2,1fr)', gap: 16 }}>
+                <div>
+                  <label className="cp-label">Name <span style={{ color: '#f59e0b' }}>*</span></label>
+                  <input className="cp-input" name="name" value={editFormData.name} onChange={handleEditChange} placeholder="Customer Name" required />
+                </div>
+                <div>
+                  <label className="cp-label">Phone <span style={{ color: '#f59e0b' }}>*</span></label>
+                  <input className="cp-input" name="phone" value={editFormData.phone} onChange={handleEditChange} placeholder="+91 98765 43210" required />
+                </div>
+                <div style={{ gridColumn: 'span 2' }}>
+                  <label className="cp-label">Email</label>
+                  <input className="cp-input" type="email" name="email" value={editFormData.email} onChange={handleEditChange} placeholder="customer@mail.com" />
+                </div>
+                <div style={{ gridColumn: 'span 2' }}>
+                  <label className="cp-label">Address</label>
+                  <input className="cp-input" name="address" value={editFormData.address} onChange={handleEditChange} placeholder="123 Main Street" />
+                </div>
+                <div>
+                  <label className="cp-label">City</label>
+                  <input className="cp-input" name="city" value={editFormData.city} onChange={handleEditChange} placeholder="Guntur" />
+                </div>
+                <div>
+                  <label className="cp-label">State</label>
+                  <input className="cp-input" name="state" value={editFormData.state} onChange={handleEditChange} placeholder="AP" />
+                </div>
+                <div>
+                  <label className="cp-label">Pincode</label>
+                  <input className="cp-input" name="pincode" value={editFormData.pincode} onChange={handleEditChange} placeholder="522002" />
+                </div>
+              </div>
+
+              <div style={{
+                display: 'flex', gap: 10, justifyContent: 'flex-end',
+                marginTop: 26, paddingTop: 18,
+                borderTop: '1px solid rgba(255,255,255,.06)',
+              }}>
+                <button type="button" onClick={() => { setShowEditModal(false); setEditCustomer(null); }}
+                  className="cp-btn" style={{
+                    padding: '10px 20px', borderRadius: 12,
+                    background: 'rgba(255,255,255,.06)',
+                    border: '1px solid rgba(255,255,255,.1)',
+                    color: 'rgba(255,255,255,.6)', fontSize: 13, fontWeight: 600,
+                    cursor: 'pointer',
+                  }}>Cancel</button>
+                <button type="submit" disabled={editSubmitting} className="cp-btn" style={{
+                  padding: '10px 24px', borderRadius: 12,
+                  background: 'linear-gradient(135deg,#f59e0b,#d97706)',
+                  border: 'none', color: 'white', fontSize: 13, fontWeight: 700,
+                  cursor: editSubmitting ? 'wait' : 'pointer',
+                  opacity: editSubmitting ? .7 : 1,
+                  display: 'flex', alignItems: 'center', gap: 8,
+                  boxShadow: '0 4px 14px rgba(245,158,11,.3)',
+                }}>
+                  {editSubmitting && <SmallSpinner />}
+                  {editSubmitting ? 'Updating...' : '✓ Update Customer'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </ModalBg>
+      )}
+
       {/* ─── View Modal ─── */}
       {showView && selectedCustomer && (
         <ModalBg onClose={() => setShowView(false)}>
@@ -487,6 +677,12 @@ export default function CustomersPage() {
                   <p style={{ margin: '2px 0 0', fontSize: 12, color: 'rgba(255,255,255,.4)' }}>
                     Since {new Date(selectedCustomer.createdAt).toLocaleDateString('en-IN')}
                   </p>
+                  {/* ✅ ADDED: Show created by info */}
+                  {selectedCustomer.createdByUser && (
+                    <p style={{ margin: '2px 0 0', fontSize: 11, color: 'rgba(255,255,255,.3)' }}>
+                      Created by {selectedCustomer.createdByUser.name}
+                    </p>
+                  )}
                 </div>
               </div>
 
@@ -499,6 +695,7 @@ export default function CustomersPage() {
                   { icon: '🏙️', label: 'City', val: selectedCustomer.city },
                   { icon: '🗺️', label: 'State', val: selectedCustomer.state },
                   { icon: '📮', label: 'Pincode', val: selectedCustomer.pincode },
+                  { icon: '🏢', label: 'Branch', val: selectedCustomer.branch?.name },
                 ].map(f => (
                   <div key={f.label}>
                     <p style={{ margin: '0 0 3px', fontSize: 10, color: 'rgba(255,255,255,.35)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.5px' }}>

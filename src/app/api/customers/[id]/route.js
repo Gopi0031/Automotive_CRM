@@ -165,11 +165,34 @@ export async function PUT(req, { params }) {
       where: { id: decoded.userId },
     });
 
-    if (!currentUser || !['SUPER_ADMIN', 'ADMIN', 'MANAGER'].includes(currentUser.role)) {
+    // ✅ UPDATED: Added EMPLOYEE to allowed roles for customer update
+    if (!currentUser || !['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'EMPLOYEE'].includes(currentUser.role)) {
       return NextResponse.json(
         { success: false, message: 'You do not have permission to update customers' },
         { status: 403 }
       );
+    }
+
+    // ✅ ADDED: If EMPLOYEE, only allow updating customers they created
+    if (currentUser.role === 'EMPLOYEE') {
+      const existingCustomer = await prisma.customer.findUnique({
+        where: { id },
+        select: { createdBy: true },
+      });
+
+      if (!existingCustomer) {
+        return NextResponse.json(
+          { success: false, message: 'Customer not found' },
+          { status: 404 }
+        );
+      }
+
+      if (existingCustomer.createdBy !== currentUser.id) {
+        return NextResponse.json(
+          { success: false, message: 'You can only update customers you created' },
+          { status: 403 }
+        );
+      }
     }
 
     const body = await req.json();

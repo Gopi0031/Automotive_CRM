@@ -86,10 +86,12 @@ const NAV_ITEMS = {
     {name:'Invoices',      href:'/invoices',           icon:'📄',cat:'billing'},
     {name:'Reports',       href:'/reports',            icon:'📊',cat:'analytics'},
   ],
+  // ✅ UPDATED: Added Customers link for EMPLOYEE role
   EMPLOYEE:[
     {name:'Dashboard',   href:'/dashboard',          icon:'🏠',cat:'main'},
-    {name:'My Jobs',     href:'/jobs',               icon:'🔧',cat:'operations'},
+    {name:'Customers',   href:'/customers',          icon:'🧑‍🤝‍🧑',cat:'crm'},
     {name:'Vehicles',    href:'/vehicles',           icon:'🚗',cat:'crm'},
+    {name:'My Jobs',     href:'/jobs',               icon:'🔧',cat:'operations'},
     {name:'Inventory',   href:'/inventory',          icon:'📦',cat:'inventory'},
     {name:'My Requests', href:'/inventory-requests', icon:'📋',cat:'inventory',badge:'req'},
   ],
